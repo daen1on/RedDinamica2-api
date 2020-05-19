@@ -1,6 +1,6 @@
 {
   "name": "reddinamica-api",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Website of the collaborative construction network of knowledge for the sustainability of the systems dynamics in school. RedDinámica 3.0",
   "main": "index.js",
   "scripts": {
@@ -10,26 +10,26 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/juandanielhb/reddinamica-api.git"
+    "url": "git+https://github.com/daen1on/RedDinamica2-api.git"
   },
-  "author": "Juan D. Hernández B.",
+  "author": "V. Daniel Gallego U.",
   "license": "MIT",
   "bugs": {
-    "url": "https://github.com/juandanielhb/reddinamica-api/issues"
+    "url": "https://github.com/daen1on/RedDinamica2-api/issues"
   },
-  "homepage": "https://github.com/juandanielhb/reddinamica-api#readme",
+  "homepage": "https://github.com/daen1on/RedDinamica2-api#readme",
   "dependencies": {
     "bcrypt-nodejs": "0.0.3",
-    "dotenv": "^7.0.0",
+    "dotenv": "^8.2.0",
     "express": "^4.17.1",
     "jwt-simple": "^0.5.6",
     "moment": "^2.24.0",
-    "mongodb": "^3.3.2",
-    "mongoose": "^5.7.5",
-    "mongoose-pagination": "^1.0.0",
+    "mongodb": "^3.5.7",
+    "mongoose": "^5.9.15",
+    "mongoose-pagination": "^1.1.2",
     "multer": "^1.4.2",
-    "nodemailer": "^6.3.1",
-    "uuid": "^3.3.3"
+    "nodemailer": "^6.4.6",
+    "uuid": "^8.0.0"
   },
   "devDependencies": {
     "nodemon": "^1.19.3"
