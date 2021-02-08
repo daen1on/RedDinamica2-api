@@ -1,9 +1,9 @@
 const mongoose = require('mongoose');
 const { MONGO_HOST, MONGO_PORT, MONGO_DB } = process.env;
-const connectionUrl = `mongodb://${MONGO_HOST}:${MONGO_PORT}/${MONGO_DB}`;
+const connectionUrl = `mongodb://${MONGO_HOST}:${MONGO_PORT}/${MONGO_DB}?authSource=admin`;
 
 const initData = require('./initData');
-const hola = 'pureba';
+const hola = 'prueba';
 
 const options = {
     useNewUrlParser: true,

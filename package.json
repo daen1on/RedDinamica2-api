@@ -23,15 +23,15 @@
     "dotenv": "^8.2.0",
     "express": "^4.17.1",
     "jwt-simple": "^0.5.6",
-    "moment": "^2.24.0",
-    "mongodb": "^3.5.7",
-    "mongoose": "^5.9.15",
+    "moment": "^2.29.1",
+    "mongodb": "^3.6.3",
+    "mongoose": "^5.11.14",
     "mongoose-pagination": "^1.0.0",
     "multer": "^1.4.2",
-    "nodemailer": "^6.4.6",
+    "nodemailer": "^6.4.17",
     "uuid": "^7.0.3"
   },
   "devDependencies": {
-    "nodemon": "^1.19.3"
+    "nodemon": "^1.19.4"
   }
 }
