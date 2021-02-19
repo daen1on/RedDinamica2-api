@@ -1,6 +1,6 @@
 'use strict'
 let moment = require('moment');
-let bcrypt = require('bcrypt-nodejs');
+let bcrypt = require('bcryptjs');
 
 let User = require('../models/user.model');
 
@@ -16,7 +16,7 @@ exports.createAdmin = function(){
     user.about = 'Cuenta administrador de RedDinámica';
     
     user.created_at = moment().unix();
-
+    const saltR = 10;
     // Check duplicate users
     User.find({ $or: [{ email: user.email }, { role: 'admin' }] }, (err, users) => {
         if (err) console.log('Error in the request. The admin can not be created');
@@ -24,7 +24,8 @@ exports.createAdmin = function(){
         if (users && users.length >= 1) {
             return console.log('The administrator is already created.')
         } else {
-            bcrypt.hash(user.password, null, null, (err, hash) => {
+            bcrypt.genSalt(saltR, (err, hash)=>{
+                bcrypt.hash(user.password, salt, (err, hash) => {
                 user.password = hash;
                 user.save((err, userStored) => {
 
@@ -33,6 +34,7 @@ exports.createAdmin = function(){
                     if (!userStored) console.log('The admin has not been saved');
 
                     console.log('The admin was created correctly');
+                });
                 });
             });
         }

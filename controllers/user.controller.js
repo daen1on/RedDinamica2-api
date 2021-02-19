@@ -1,7 +1,7 @@
 'use strict'
 
 // Libraries
-let bcrypt = require('bcrypt-nodejs');
+let bcrypt = require('bcryptjs');
 let moment = require('moment');
 let fs = require('fs');
 let path = require('path');
@@ -19,7 +19,7 @@ let Publication = require('../models/publication.model');
 // Constant
 const { ITEMS_PER_PAGE } = require('../config');
 const USERS_PATH = './uploads/users/';
-
+const saltR = 10;
 
 function saveUser(req, res) {
     let params = req.body;
@@ -42,15 +42,16 @@ function saveUser(req, res) {
         user.contactNumber = params.contactNumber;
         user.socialNetworks = params.socialNetworks;
         user.created_at = moment().unix();
-
+        
         // Check duplicate users
         User.find({ email: user.email }, (err, users) => {
             if (err) return res.status(500).send({ message: 'Error in the request. The user can not be found' });
 
             if (users && users.length >= 1) {
                 return res.status(200).send({ message: 'User already exists' });
-            } else {
-                bcrypt.hash(params.password, null, null, (err, hash) => {
+            } else { 
+                bcrypt.genSalt(saltR, function(err, salt){
+                    bcrypt.hash(params.password, salt, (err, hash) => {
                     user.password = hash;
                     user.save((err, userStored) => {
 
@@ -77,6 +78,7 @@ function saveUser(req, res) {
                         userStored.password = null;
                         return res.status(200).send({ user: userStored });
                     });
+                    });
                 });
             }
         });
@@ -91,7 +93,7 @@ function saveUserByAdmin(req, res) {
     let user = new User();
 
     params.password = uuidv4().substr(0, 6);
-
+    
     if (params.name && params.surname && params.email && params.role) {
 
         user.name = params.name;
@@ -115,8 +117,8 @@ function saveUserByAdmin(req, res) {
             if (users && users.length >= 1) {
                 return res.status(200).send({ message: 'User already exists' });
             } else {
-
-                bcrypt.hash(params.password, null, null, (err, hash) => {
+                bcrypt.genSalt(saltR, function(err, salt) {
+                    bcrypt.hash(params.password, salt, (err, hash) => {
                     user.password = hash;
 
                     user.save((err, userStored) => {
@@ -137,6 +139,7 @@ function saveUserByAdmin(req, res) {
 
                         userStored.password = null;
                         return res.status(200).send({ user: userStored });
+                    });
                     });
                 });
             }
@@ -220,8 +223,10 @@ function changePassword(req, res) {
     let params = req.body;
     let password = params.password;
     let userId = req.user.sub;
+    
 
-    bcrypt.hash(password, null, null, (err, hash) => {
+    bcrypt.genSalt(saltR, function(err,salt){
+        bcrypt.hash(password, salt, (err, hash) => {
 
         User.findByIdAndUpdate(userId, { password: hash }, { new: true })
             .exec((err, userUpdated) => {
@@ -233,14 +238,15 @@ function changePassword(req, res) {
                 userUpdated.password = null;
                 return res.status(200).send({ user: userUpdated });
             });
+        });
     });
 }
 
 function recoverPassword(req, res) {
     let params = req.body;
     let password = uuidv4().substr(0, 6);
-
-    bcrypt.hash(password, null, null, (err, hash) => {
+    bcrypt.genSalt(saltR, function(err, salt){
+        bcrypt.hash(password, salt, (err, hash) => {
 
         User.findOneAndUpdate({ email: params.email }, { password: hash }, { new: true })
             .exec((err, userUpdated) => {
@@ -266,6 +272,7 @@ function recoverPassword(req, res) {
                 userUpdated.password = null;
                 return res.status(200).send({ user: userUpdated });
             });
+        });
     });
 
 }
