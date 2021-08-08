@@ -5,7 +5,8 @@ let bcrypt = require('bcryptjs');
 let moment = require('moment');
 let fs = require('fs');
 let path = require('path');
-let uuidv4 = require('uuid/v4');
+//let uuidv4 = require('uuid/v4'); --deprecated
+const { v4: uuidv4 } = require('uuid');
 
 // Services
 let jwt = require('../services/jwt.service');

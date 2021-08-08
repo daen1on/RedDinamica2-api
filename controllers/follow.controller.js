@@ -63,17 +63,24 @@ function getFollowingUsers(req, res) {
             total: total,
             pages: Math.ceil(total / ITEMS_PER_PAGE),
             itemsPerPage: ITEMS_PER_PAGE,
-            follows
+            follows,
         })
     });
 }
 
 
 function getFollowersUsers(req, res) {
-    let userId = req.user.sub;
-
+    let userId; //usuario al que se le ve el perfil
+    
+    let loggeduser=req.user.sub; //usuario loggeado
+    
+    //console.log("userloged:",loggeduser);
     if (req.params.id && req.params.page) {
-        userId = req.params.id;
+        //userId = req.params.id;
+        userId = req.params.id; //en
+        
+        console.log("entró al if: ",userId);
+        //hay un else?
     }
 
     let page = 1;
@@ -81,53 +88,47 @@ function getFollowersUsers(req, res) {
     if (req.params.page) {
         page = req.params.page;
     } else {
-        page = req.params.id;
+        page = req.params.id; // no entiendo para qué lo hace
     }
-
+    //TODO: buscar quién es followed y cambiar userId por vUserId
     Follow.find({ followed: userId }).populate('user').paginate(page, ITEMS_PER_PAGE, (err, follows, total) => {
         if (err) return res.status(500).send({ message: 'Error in the request. The followers users can not be found ' });
 
         if (!follows) return res.status(404).send({ message: 'There are no followers users' });
 
-        followsUserId(userId).then((value) => {
+        followsUserId(loggeduser).then((value) => {
             return res.status(200).send({
                 total: total,
                 pages: Math.ceil(total / ITEMS_PER_PAGE),
                 itemsPerPage: ITEMS_PER_PAGE,
                 follows,
-                following: value.following,
-                followers: value.followers
+                following: value.following
+                
             });
         });
     });
 }
 
-async function followsUserId(userId) {
+async function followsUserId(userLogged) {
+    //trae los que esta siguiend el usuario logueado
+    
+    
+    let following = await Follow.find({ user: userLogged }, { '_id': 0, '_v': 0, 'user': 0 }, (err, follows) => {
+        return follows; 
+    }); 
 
-    let following = await Follow.find({ user: userId }, { '_id': 0, '_v': 0, 'user': 0 }, (err, follows) => {
-        return follows;
-    });
-
+    
     let following_clean = [];
-
-    following.forEach((follow) => {
-        following_clean.push(follow.followed);
-    });
-
-    let followers = await Follow.find({ followed: userId }, { '_id': 0, '_v': 0, 'followed': 0 }, (err, follows) => {
-        return follows;
-    });
-
-    let followers_clean = [];
-
-    followers.forEach((follow) => {
-        followers_clean.push(follow.user);
-    });
-
-
+    
+    for await (const follow of following){
+        following_clean.push(follow.followed); 
+        }
+       
     return {
+        
         following: following_clean,
-        followers: followers_clean
+        //followers: followers_clean,
+    
     };
 }
 

@@ -8,9 +8,8 @@ const hola = 'prueba';
 const options = {
     useNewUrlParser: true,
     useCreateIndex: true,
-    reconnectTries: Number.MAX_VALUE,
-    reconnectInterval: 500,
-    connectTimeoutMS: 10000,
+    useFindAndModify: false,
+    useUnifiedTopology: true
 };
 
 module.exports = (() => {

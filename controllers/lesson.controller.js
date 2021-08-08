@@ -29,6 +29,8 @@ function saveLesson(req, res) {
     lesson.type = params.type;
     lesson.knowledge_area = params.knowledge_area;
     lesson.author = params.author;
+    lesson.leader = params.author;  //prueba pasar desde suggest-lesson
+    lesson.development_group = [params.author]; //prueba pasar desde suggest-lesson
     lesson.accepted = params.accepted;
     lesson.justification = params.justification;
     lesson.state = params.state;

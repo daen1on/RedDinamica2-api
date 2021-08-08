@@ -1,8 +1,8 @@
 'use strict'
 const { FILES_SIZE_MB } = require("../config");
 
-let uuidv4 = require('uuid/v4');
-
+//let uuidv4 = require('uuid/v4');--deprecated
+const { v4: uuidv4 } = require('uuid');
 let multer = require('multer');
 let path = require('path');
 

@@ -30,7 +30,7 @@ let message = schema({
 
 let lessonSchema = schema({
     title:String,
-    resume:String,
+    resume:String,  
     references:String,
     justification:String,
     development_level:String,

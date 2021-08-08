@@ -24,7 +24,7 @@ exports.createAdmin = function(){
         if (users && users.length >= 1) {
             return console.log('The administrator is already created.')
         } else {
-            bcrypt.genSalt(saltR, (err, hash)=>{
+            bcrypt.genSalt(saltR, (err, salt)=>{
                 bcrypt.hash(user.password, salt, (err, hash) => {
                 user.password = hash;
                 user.save((err, userStored) => {
