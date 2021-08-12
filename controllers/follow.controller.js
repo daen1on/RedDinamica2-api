@@ -58,12 +58,13 @@ function getFollowingUsers(req, res) {
         if (err) return res.status(500).send({ message: 'Error in the request. The following users can not be found ' });
 
         if (!follows) return res.status(404).send({ message: 'There are no followings users' });
-
+        
         return res.status(200).send({
             total: total,
             pages: Math.ceil(total / ITEMS_PER_PAGE),
             itemsPerPage: ITEMS_PER_PAGE,
-            follows,
+            follows
+            
         })
     });
 }
@@ -79,7 +80,7 @@ function getFollowersUsers(req, res) {
         //userId = req.params.id;
         userId = req.params.id; //en
         
-        console.log("entró al if: ",userId);
+        //console.log("entró al if: ",userId);
         //hay un else?
     }
 
@@ -90,7 +91,7 @@ function getFollowersUsers(req, res) {
     } else {
         page = req.params.id; // no entiendo para qué lo hace
     }
-    //TODO: buscar quién es followed y cambiar userId por vUserId
+    
     Follow.find({ followed: userId }).populate('user').paginate(page, ITEMS_PER_PAGE, (err, follows, total) => {
         if (err) return res.status(500).send({ message: 'Error in the request. The followers users can not be found ' });
 

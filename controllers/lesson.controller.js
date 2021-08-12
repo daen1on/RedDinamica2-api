@@ -29,8 +29,6 @@ function saveLesson(req, res) {
     lesson.type = params.type;
     lesson.knowledge_area = params.knowledge_area;
     lesson.author = params.author;
-    lesson.leader = params.author;  //prueba pasar desde suggest-lesson
-    lesson.development_group = [params.author]; //prueba pasar desde suggest-lesson
     lesson.accepted = params.accepted;
     lesson.justification = params.justification;
     lesson.state = params.state;
@@ -372,8 +370,9 @@ function getSuggestLessons(req, res) {
             if (err) return res.status(500).send({ message: 'Error in the request. Could not get records' });
 
             if (!lessons) return res.status(404).send({ message: 'It was not found any record' });
-
+            console.log(lessons);
             return res.status(200).send({
+                
                 lessons,
                 total,
                 pages: Math.ceil(total / ITEMS_PER_PAGE)
