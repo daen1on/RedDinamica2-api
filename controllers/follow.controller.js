@@ -10,18 +10,26 @@ let Follow = require('../models/follow.model');
 
 function saveFollow(req, res) {
     let params = req.body;
-
     let follow = new Follow();
-
+    
     follow.user = req.user.sub;
     follow.followed = params.followed;
+    //first looks if it already exists.
+    Follow.find({ user: follow.user,followed:follow.followed }, (err, user) => {
+        if (err) return res.status(500).send({ message: 'Error in the request. 500 internal following collection server error' });
 
-    follow.save((err, followStored) => {
-        if (err) return res.status(500).send({ message: 'Error in the request. The follow can not be saved' });
+        if (user && user.length >= 1) {
+            return res.status(200).send({ message: 'Follow already exists' });
+        } 
+        else { 
+            follow.save((err, followStored) => {
+                if (err) return res.status(500).send({ message: 'Error in the request. The follow can not be saved' });
 
-        if (!followStored) return res.status(404).send({ message: 'The follow has not been saved' });
-
-        return res.status(200).send(followStored);
+                if (!followStored) return res.status(404).send({ message: 'The follow has not been saved' });
+                console.log(followStored);
+                return res.status(200).send(followStored);
+            });
+        }
     });
 
 }
@@ -68,7 +76,6 @@ function getFollowingUsers(req, res) {
         })
     });
 }
-
 
 function getFollowersUsers(req, res) {
     let userId; //usuario al que se le ve el perfil
