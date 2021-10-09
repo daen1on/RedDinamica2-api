@@ -2,10 +2,20 @@
 
 // app.js has all the set up for express
 let express = require('express');
-let bodyParser = require('body-parser');
+//let bodyParser = require('body-parser'); deprecated?
 let path = require('path');
 let app = express();
 
+
+// x-frame option
+const helmet = require("helmet");
+//cors
+var cors = require('cors')
+var corsOptions = {
+    //credentials: true,
+    origin:'http://localhost:4200',
+    optionsSuccessStatus: 200 // some legacy browsers (IE11, various SmartTVs) choke on 204
+  }
 // Load routes
 let institutionRoutes = require('./routes/institution.routes');
 let cityRoutes = require('./routes/city.routes');
@@ -20,18 +30,14 @@ let lessonRoutes = require('./routes/lesson.routes');
 let userRoutes = require('./routes/user.routes');
 
 // Middlewares
-app.use(bodyParser.urlencoded({extended:false}));
-app.use(bodyParser.json());
+app.use(express.urlencoded({ extended: false })); //Parse URL-encoded bodies
+app.use(express.json({limit:"20000kb"})); 
 
 // Cors
-app.use((req, res, next) => {
-    res.header('Access-Control-Allow-Origin', '*');
-    res.header('Access-Control-Allow-Headers', 'Authorization, X-API-KEY, Origin, X-Requested-With, Content-Type, Accept, Access-Control-Allow-Request-Method');
-    res.header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS, PUT, DELETE');
-    res.header('Allow', 'GET, POST, OPTIONS, PUT, DELETE');
-     
-    next();
-});
+app.use(cors(corsOptions));
+
+//x-fOpt
+app.use(helmet());
 
 // Static route
 app.use('/', express.static('client', {redirect:false}));
