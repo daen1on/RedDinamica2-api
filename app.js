@@ -2,20 +2,29 @@
 
 // app.js has all the set up for express
 let express = require('express');
-//let bodyParser = require('body-parser'); deprecated?
 let path = require('path');
+const crypto = require('crypto');
+
+// Generate a random nonce (16 bytes) as a hexadecimal string
+const nonce = crypto.randomBytes(16).toString('hex');
+
 let app = express();
 
-
-// x-frame option
-const helmet = require("helmet");
+// Set a Content Security Policy header
+app.use((req, res, next) => {
+    res.setHeader('Content-Security-Policy', `default-src 'self' https://fonts.gstatic.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; script-src 'self' 'unsafe-inline' 'unsafe-eval' 'nonce-${nonce}';`);
+    next();
+});
 //cors
-var cors = require('cors')
+var cors = require('cors');
+
 var corsOptions = {
-    //credentials: true,
-    origin:'http://localhost:4200',
-    optionsSuccessStatus: 200 // some legacy browsers (IE11, various SmartTVs) choke on 204
-  }
+    origin: ['https://simon.uis.edu.co', 'https://simon.uis.edu.co/'],
+    methods: 'GET,POST,PUT,DELETE,PATCH', // Allow all specified methods
+    optionsSuccessStatus: 204 // 200; some legacy browsers (IE11, various SmartTVs) choke on 204
+}
+
+
 // Load routes
 let institutionRoutes = require('./routes/institution.routes');
 let cityRoutes = require('./routes/city.routes');
@@ -35,9 +44,24 @@ app.use(express.json({limit:"20000kb"}));
 
 // Cors
 app.use(cors(corsOptions));
+// x-frame option
+const helmet = require('helmet');
+// ...
+app.use(helmet.contentSecurityPolicy({
+  directives: {
+    defaultSrc: ["'self'"],
+    scriptSrc: ["'self'", 'https://example.com', 'https://use.fontawesome.com'],
+    styleSrc: ["'self'", 'https://fonts.googleapis.com'],
+    // Agrega otras fuentes, imágenes y recursos aquí
+  }
+}));
 
-//x-fOpt
-app.use(helmet());
+app.use(helmet.hsts({
+  maxAge: 31536000, // 1 año en segundos
+  includeSubDomains: true,
+  preload: true,
+}));
+
 
 // Static route
 app.use('/', express.static('client', {redirect:false}));

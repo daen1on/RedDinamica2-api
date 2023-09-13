@@ -9,7 +9,8 @@ const options = {
     useNewUrlParser: true,
     useCreateIndex: true,
     useFindAndModify: false,
-    useUnifiedTopology: true
+    useUnifiedTopology: true,
+    family:4
 };
 
 module.exports = (() => {

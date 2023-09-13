@@ -26,7 +26,7 @@ let mailOptions = function (subject, recipients, message) {
     let imagePath = path.join(__dirname, '../client/assets/images/');
     
     return {
-        from: `RedDinámica <${process.env.EMAIL}>`,
+        from: `RedDinámica <${process.env.EMAIL_HOST_USER}>`,
         to: recipients,
         subject: subject,
         html: mail.mailTemplate(message),

@@ -1,5 +1,9 @@
 'use strict'
 
+// Retrieve the algorithm and key size values from environment variables
+const algorithm = process.env.ALGORITHM || 'HS256'; // Use default value 'HS256' if environment variable is not set
+const keySize = parseInt(process.env.KEYSIZE) || 32; // Use default value 32 if environment variable is not set or is not a valid integer
+
 // Libraries
 let bcrypt = require('bcryptjs');
 let moment = require('moment');
@@ -76,7 +80,7 @@ function saveUser(req, res) {
                             `
                         );
 
-                        userStored.password = null;
+                        delete userStored.password;
                         return res.status(200).send({ user: userStored });
                     });
                     });
@@ -174,7 +178,7 @@ function login(req, res) {
 
                         if (params.getToken) {
                             // Generate and return token
-                            return res.status(200).send({ token: jwt.createToken(user) });
+                            return res.status(200).send({ token: jwt.createToken(user,algorithm,keySize) });
 
                         } else {
                             // Return user data

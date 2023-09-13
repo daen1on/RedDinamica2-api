@@ -16,6 +16,7 @@ exports.ensureAuth = function(req, res, next){
         payload = jwt.decode(token, SECRET_KEY);
 
         if(payload.exp <= moment().unix()){
+            res.set('WWW-Authenticate', 'Bearer realm="Token has expired"');
             return res.status(401).send({
                 message: 'Session token has expired'
             });
