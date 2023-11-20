@@ -1,163 +1,89 @@
-'use strict'
-let { ITEMS_PER_PAGE } = require('../config');
+'use strict';
+const { ITEMS_PER_PAGE } = require('../config');
+const mongoosePaginate = require('mongoose-pagination');
+const User = require('../models/user.model');
+const Follow = require('../models/follow.model');
 
-// Load libraries
-let mongoosePaginate = require('mongoose-pagination');
-
-// Load models
-let User = require('../models/user.model');
-let Follow = require('../models/follow.model');
-
-function saveFollow(req, res) {
-    let params = req.body;
-    let follow = new Follow();
-    
+const saveFollow = async (req, res) => {
+    const params = req.body;
+    const follow = new Follow(params);
     follow.user = req.user.sub;
     follow.followed = params.followed;
-    //first looks if it already exists.
-    Follow.find({ user: follow.user,followed:follow.followed }, (err, user) => {
-        if (err) return res.status(500).send({ message: 'Error in the request. 500 internal following collection server error' });
-
-        if (user && user.length >= 1) {
+    try {
+        const existingFollow = await Follow.find({ user: follow.user, followed: follow.followed });
+        if (existingFollow && existingFollow.length >= 1) {
             return res.status(200).send({ message: 'Follow already exists' });
-        } 
-        else { 
-            follow.save((err, followStored) => {
-                if (err) return res.status(500).send({ message: 'Error in the request. The follow can not be saved' });
-
-                if (!followStored) return res.status(404).send({ message: 'The follow has not been saved' });
-                console.log(followStored);
-                return res.status(200).send(followStored);
-            });
+        } else {
+            const followStored = await follow.save();
+            return res.status(200).send({ follow: followStored });
         }
-    });
+    } catch (err) {
+        return res.status(500).send({ message: 'Error in the request. The follow can not be saved' });
+    }
+};
 
-}
+const deleteFollow = async (req, res) => {
+    const userId = req.user.sub;
+    const followId = req.params.id;
+    try {
+        const followRemoved = await Follow.findOneAndRemove({ user: userId, followed: followId });
+        return res.status(200).send({ follow: followRemoved });
+    } catch (err) {
+        return res.status(500).send({ message: 'Error in the request. The follow can not be removed' });
+    }
+};
 
-function deleteFollow(req, res) {
-    let userId = req.user.sub;
-    let followId = req.params.id;
-
-    Follow.findOneAndRemove({ user: userId, followed: followId }, (err, followRemoved) => {
-        if (err) return res.status(500).send({ message: 'Error in the request. The follow can not be removed ' });
-
-        if (!followRemoved) return res.status(404).send({ message: 'The follow can not be removed, it has not been found' });
-
-        return res.status(200).send(followRemoved);
-    });
-}
-
-function getFollowingUsers(req, res) {
-    let userId = req.user.sub;
-
+const getFollowingUsers = async (req, res) => {
+    const userId = req.user.sub;
     if (req.params.id && req.params.page) {
         userId = req.params.id;
     }
-
-    let page = 1;
-
-    if (req.params.page) {
-        page = req.params.page;
-    } else {
-        page = req.params.id;
+    const page = req.params.page || req.params.id || 1;
+    try {
+        const follows = await Follow.find({ user: userId }).populate('followed', 'name surname picture role').paginate(page, ITEMS_PER_PAGE);
+        return res.status(200).send({ follows });
+    } catch (err) {
+        return res.status(500).send({ message: 'Error in the request. The following users can not be found' });
     }
+};
 
-    Follow.find({ user: userId }).populate('followed','name surname picture role').paginate(page, ITEMS_PER_PAGE, (err, follows, total) => {
-        if (err) return res.status(500).send({ message: 'Error in the request. The following users can not be found ' });
-
-        if (!follows) return res.status(404).send({ message: 'There are no followings users' });
-        
-        return res.status(200).send({
-            total: total,
-            pages: Math.ceil(total / ITEMS_PER_PAGE),
-            itemsPerPage: ITEMS_PER_PAGE,
-            follows
-            
-        })
-    });
-}
-
-function getFollowersUsers(req, res) {
-    let userId; //usuario al que se le ve el perfil
-    
-    let loggeduser=req.user.sub; //usuario loggeado
-    
-    //console.log("userloged:",loggeduser);
+const getFollowersUsers = async (req, res) => {
+    let userId = req.user.sub;
     if (req.params.id && req.params.page) {
-        //userId = req.params.id;
-        userId = req.params.id; //en
-        
-        //console.log("entró al if: ",userId);
-        //hay un else?
+        userId = req.params.id;
     }
-
-    let page = 1;
-
-    if (req.params.page) {
-        page = req.params.page;
-    } else {
-        page = req.params.id; // no entiendo para qué lo hace
+    const page = req.params.page || req.params.id || 1;
+    try {
+        const follows = await Follow.find({ followed: userId }).populate('user', 'name surname picture role').paginate(page, ITEMS_PER_PAGE);
+        const following = await followsUserId(req.user.sub);
+        return res.status(200).send({ follows, following: following.following });
+    } catch (err) {
+        return res.status(500).send({ message: 'Error in the request. The followers users can not be found' });
     }
-    
-    Follow.find({ followed: userId }).populate('user','name surname picture role').paginate(page, ITEMS_PER_PAGE, (err, follows, total) => {
-        if (err) return res.status(500).send({ message: 'Error in the request. The followers users can not be found ' });
+};
 
-        if (!follows) return res.status(404).send({ message: 'There are no followers users' });
+const followsUserId = async (userLogged) => {
+    const following = await Follow.find({ user: userLogged }, { '_id': 0, '_v': 0, 'user': 0 });
+    const following_clean = [];
+    for await (const follow of following) {
+        following_clean.push(follow.followed);
+    }
+    return { following: following_clean };
+};
 
-        followsUserId(loggeduser).then((value) => {
-            return res.status(200).send({
-                total: total,
-                pages: Math.ceil(total / ITEMS_PER_PAGE),
-                itemsPerPage: ITEMS_PER_PAGE,
-                follows,
-                following: value.following
-                
-            });
-        });
-    });
-}
-
-async function followsUserId(userLogged) {
-    //trae los que esta siguiend el usuario logueado
-    
-    
-    let following = await Follow.find({ user: userLogged }, { '_id': 0, '_v': 0, 'user': 0 }, (err, follows) => {
-        return follows; 
-    }); 
-
-    
-    let following_clean = [];
-    
-    for await (const follow of following){
-        following_clean.push(follow.followed); 
-        }
-       
-    return {
-        
-        following: following_clean,
-        //followers: followers_clean,
-    
-    };
-}
-
-function getMyFollows(req, res) {
-    var userId = req.user.sub;
-
-    var find = Follow.find({ user: userId });
-
+const getMyFollows = async (req, res) => {
+    const userId = req.user.sub;
+    let find = Follow.find({ user: userId });
     if (req.params.followed) {
         find = Follow.find({ followed: userId });
     }
-
-    find.populate('user followed').exec((err, follows) => {
-        if (err) return res.status(500).send({ message: 'Error in the request' });
-
-        if (!follows) return res.status(404).send({ message: 'You are not following any user' });
-
+    try {
+        const follows = await find.populate('user followed').exec();
         return res.status(200).send({ follows });
-    });
-}
-
+    } catch (err) {
+        return res.status(500).send({ message: 'Error in the request' });
+    }
+};
 
 module.exports = {
     saveFollow,
@@ -165,8 +91,4 @@ module.exports = {
     getFollowingUsers,
     getFollowersUsers,
     getMyFollows
-
-}
-
-
-
+};

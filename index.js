@@ -9,7 +9,9 @@ async function initDB(){
     if (db) { initApp(); }
 }
 
+
 function initApp(){
+  
     console.log("Starting server");
     app.listen(PORT, ()=>{
         console.log(`Server is up on port: ${PORT}`);

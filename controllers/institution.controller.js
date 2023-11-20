@@ -1,95 +1,59 @@
-'use strict'
-let { ITEMS_PER_PAGE } = require('../config');
+'use strict';
+const { ITEMS_PER_PAGE } = require('../config');
+const mongoosePaginate = require('mongoose-pagination');
+const Institution = require('../models/institution.model');
 
-// Load libraries
-let mongoosePaginate = require('mongoose-pagination');
-
-// Load models
-let Institution = require('../models/institution.model');
-
-
-function saveInstitution(req, res) {
-    let params = req.body;
-
-    let institution = new Institution();
-
-    institution.name = params.name;
-    institution.email = params.email;
-    institution.website = params.website;
-    institution.telephone = params.telephone;
-    institution.city = params.city; 
-    institution.used = params.used;
-       
-    institution.save((err, institutionStored) => {
-        if (err) return res.status(500).send({ message: 'The institution can not be saved' });
-
-        if (!institutionStored) return res.status(404).send({ message: 'The institution has not been saved' });
-
+const saveInstitution = async (req, res) => {
+    const params = req.body;
+    const institution = new Institution(params);
+    try {
+        const institutionStored = await institution.save();
         return res.status(200).send({ institution: institutionStored });
-    });
-
-}
-
-function updateInstitution(req, res) {
-    var institutionId = req.params.id;
-    var updateData = req.body;
-
-    Institution.findByIdAndUpdate(institutionId, updateData, { new: true }, (err, institutionUpdated) => {
-        if (err) return res.status(500).send({ message: 'Error in the request. The institution can not be updated' });
-
-        if (!institutionUpdated) return res.status(404).send({ message: 'The institution has not been updated' });
-
-        return res.status(200).send({ institution: institutionUpdated });
-    });
-}
-
-function deleteInstitution(req, res) {
-    var institutionId = req.params.id;
-
-    Institution.findOneAndRemove({ _id: institutionId }, (err, institutionRemoved) => {
-        if (err) return res.status(500).send({ message: 'Error in the request. The institution can not be removed' });
-
-        if (!institutionRemoved) return res.status(404).send({ message: 'The institution can not be removed, it has already been used or it has not been found' });
-
-        return res.status(200).send({ institution: institutionRemoved });
-    });
-}
-
-function getInstitutions(req, res) {
-    var page = 1;
-
-    if (req.params.page) {
-        page = req.params.page;
+    } catch (err) {
+        return res.status(500).send({ message: 'The institution can not be saved' });
     }
+};
 
-    var itemsPerPage = ITEMS_PER_PAGE;
+const getInstitutions = async (req, res) => {
+    const page = req.params.page || 1;
+    const itemsPerPage = ITEMS_PER_PAGE;
+    try {
+        const institutions = await Institution.find().sort('name').populate('city').paginate(page, itemsPerPage);
+        return res.status(200).send({ institutions });
+    } catch (err) {
+        return res.status(500).send({ message: 'Error in the request. The institutions were not found' });
+    }
+};
 
-    Institution.find().sort('name').populate('city').paginate(page, itemsPerPage, (err, institutions, total) => {
-        if (err) return res.status(500).send({ message: 'Error in the request. The institutions were not found' });
+const updateInstitution = async (req, res) => {
+    const institutionId = req.params.id;
+    const updateData = req.body;
+    try {
+        const institutionUpdated = await Institution.findByIdAndUpdate(institutionId, updateData, { new: true });
+        return res.status(200).send({ institution: institutionUpdated });
+    } catch (err) {
+        return res.status(500).send({ message: 'Error in the request. The institution can not be updated' });
+    }
+};
 
-        if (!institutions) return res.status(404).send({ message: 'No institutions were found' });
+const deleteInstitution = async (req, res) => {
+    const institutionId = req.params.id;
+    try {
+        const institutionRemoved = await Institution.findOneAndRemove({ _id: institutionId });
+        return res.status(200).send({ institution: institutionRemoved });
+    } catch (err) {
+        return res.status(500).send({ message: 'Error in the request. The institution can not be removed' });
+    }
+};
 
-        return res.status(200).send({
-            institutions: institutions,
-            total: total,
-            pages: Math.ceil(total / itemsPerPage)
-        });
-    });
-
-
-
-}
-
-function getAllInstitutions(req, res) {
-
-    Institution.find().sort('name').populate('city').exec((err, institutions) => {
-        if (err) return res.status(500).send({ message: 'Error in the request. The institutions were not found' });
-
-        if (!institutions) return res.status(404).send({ message: 'No institutions were found' });
-
-        return res.status(200).send({institutions: institutions});
-    });
-}
+const getAllInstitutions = async (req, res) => {
+    try {
+        const institutions = await Institution.find().sort('name').populate('city').exec();
+        return res.status(200).send({ institutions });
+    } catch (err) {
+        return res.status(500).send({ message: 'Error in the request. The institutions were not found' });
+    }
+};
 
 module.exports = {
     saveInstitution,
@@ -97,4 +61,4 @@ module.exports = {
     deleteInstitution,
     getInstitutions,
     getAllInstitutions
-}
+};

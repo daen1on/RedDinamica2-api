@@ -1,63 +1,45 @@
-'use strict'
-let { ITEMS_PER_PAGE } = require('../config');
+'use strict';
+const { ITEMS_PER_PAGE } = require('../config');
+const mongoosePaginate = require('mongoose-pagination');
+const moment = require('moment');
+const Comment = require('../models/comment.model');
 
-// Load libraries
-let mongoosePaginate = require('mongoose-pagination');
-let moment = require('moment');
-
-// Load models
-let Comment = require('../models/comment.model');
-
-
-function saveComment(req, res) {
-    let params = req.body;
-
-    let comment = new Comment();
-
-    comment.text = params.text;
-    comment.user = params.user;
-    comment.score = params.score;
+const saveComment = async (req, res) => {
+    const params = req.body;
+    const comment = new Comment(params);
     comment.created_at = moment().unix();
-    
-    comment.save((err, commentStored) => {
-        if (err) return res.status(500).send({ message: 'The comment can not be saved' });
-
-        if (!commentStored) return res.status(404).send({ message: 'The comment has not been saved' });
-
+    try {
+        const commentStored = await comment.save();
         return res.status(200).send({ comment: commentStored });
-    });
+    } catch (err) {
+        return res.status(500).send({ message: 'The comment can not be saved' });
+    }
+};
 
-}
-
-function updateComment(req, res) {
-    let commentId = req.params.id;
-    let updateData = req.body;
-
+const updateComment = async (req, res) => {
+    const commentId = req.params.id;
+    const updateData = req.body;
     updateData.created_at = moment().unix();
-
-    Comment.findByIdAndUpdate(commentId, updateData, { new: true }, (err, commentUpdated) => {
-        if (err) return res.status(500).send({ message: 'Error in the request. The comment can not be updated' });
-
-        if (!commentUpdated) return res.status(404).send({ message: 'The comment has not been updated' });
-
+    try {
+        const commentUpdated = await Comment.findByIdAndUpdate(commentId, updateData, { new: true });
         return res.status(200).send({ comment: commentUpdated });
-    });
-}
+    } catch (err) {
+        return res.status(500).send({ message: 'Error in the request. The comment can not be updated' });
+    }
+};
 
-function deleteComment(req, res) {
-    let commentId = req.params.id;
-
-    Comment.findByIdAndRemove( commentId, (err, commentRemoved) => {
-        if (err) return res.status(500).send({ message: 'Error in the request. The comment can not be removed ' });
-
-        if (!commentRemoved) return res.status(404).send({ message: 'The comment can not be removed, it has not been found' });
-
-        return res.status(200).send({comment: commentRemoved});
-    });
-}
+const deleteComment = async (req, res) => {
+    const commentId = req.params.id;
+    try {
+        const commentRemoved = await Comment.findByIdAndRemove(commentId);
+        return res.status(200).send({ comment: commentRemoved });
+    } catch (err) {
+        return res.status(500).send({ message: 'Error in the request. The comment can not be removed' });
+    }
+};
 
 module.exports = {
     saveComment,
     updateComment,
     deleteComment
-}
+};

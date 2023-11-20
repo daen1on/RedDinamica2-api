@@ -13,11 +13,9 @@ let Resource = require('../models/resource.model');
 let Comment = require('../models/comment.model');
 
 
-function saveResource(req, res) {
-    let params = req.body;
-
-    let resource = new Resource();
-
+const saveResource = async (req, res) => {
+    const params = req.body;
+    const resource = new Resource();
     resource.name = params.name;
     resource.type = params.type; // [ document, video, link, software]
     resource.description = params.description;
@@ -25,98 +23,73 @@ function saveResource(req, res) {
     resource.justification = params.justification;
     resource.author = params.author;
     resource.accepted = params.accepted;
-    resource.created_at = moment().unix();    
+    resource.created_at = moment().unix();
     resource.url = params.url;
-
-    resource.save((err, resourceStored) => {
-        if (err) return res.status(500).send({ message: 'Error in the request. The resource can not be saved' });
-
-        if (!resourceStored) return res.status(404).send({ message: 'The resource has not been saved' });
-
+    try {
+        const resourceStored = await resource.save();
         return res.status(200).send({ resource: resourceStored });
-    });
-}
-
-function uploadResourceFile(req, res){
-    let resourceId = req.params.id;
-    let filePath = req.file.path;
-    let filename = req.file.filename;
+    } catch (err) {
+        return res.status(500).send({ message: 'Error in the request. The resource can not be saved' });
+    }
+};
+const uploadResourceFile = async (req, res) => {
+    const resourceId = req.params.id;
+    const filePath = req.file.path;
+    const filename = req.file.filename;
 
     if (req.file) {
-
-        Resource.findOne({'_id': resourceId }, (err, resource) => {
-
-            if (resource) {
-
-                Resource.findByIdAndUpdate(resourceId, { file: filename }, { new: true }, (err, resourceUpdated) => {
-
-                    if (err) return removeFilesOfUpdates(res, 500, filePath, 'Error in the request. The resource can not be upadated');
-
-                    if (!resourceUpdated) return removeFilesOfUpdates(res, 404, filePath, 'The resource has not been updated');
-
-                    return res.status(200).send({ resource: resourceUpdated });
-                });
-
-            } else {
-                return removeFilesOfUpdates(res, 403, filePath, 'You do not have permission to update user data');
+        const resource = await Resource.findOne({'_id': resourceId });
+        if (resource) {
+            try {
+                const resourceUpdated = await Resource.findByIdAndUpdate(resourceId, { file: filename }, { new: true });
+                return res.status(200).send({ resource: resourceUpdated });
+            } catch (err) {
+                return removeFilesOfUpdates(res, 500, filePath, 'Error in the request. The resource can not be upadated');
             }
-        });
-    } else {
-        return res.status(200).send({ message: 'No file has been uploaded' })
-    }
-}
-
-function getResourceFile(req, res){
-    let file = req.params.file;
-    let pathFile = path.resolve(RESOURCE_PATH, file);
-
-    fs.stat(pathFile, (err, stat) => {
-
-        if (err) {
-            if (err.code === 'ENOENT') {
-                return res.status(200).send({ message: 'The file does not exits' });
-            } else { // en caso de otro error
-                return res.status(500).send({ message: 'Error requesting the file.' });
-            }
+        } else {
+            return removeFilesOfUpdates(res, 403, filePath, 'You do not have permission to update user data');
         }
+    } else {
+        return res.status(200).send({ message: 'No file has been uploaded' });
+    }
+};
+const getResourceFile = async (req, res) => {
+    const file = req.params.file;
+    const pathFile = path.resolve(RESOURCE_PATH, file);
+
+    try {
+        fs.statSync(pathFile);
         return res.sendFile(pathFile);
-    });
-}
-
-function deleteResource(req, res) {
-    let resourceId = req.params.id;
-
-    Resource.findByIdAndRemove({ user: req.user.sub, '_id': resourceId }, (err, resourceRemoved) => {
-        if (err) return res.status(500).send({ message: 'Error in the request. It can not be removed the resource' });
-
-        if (!resourceRemoved) return res.status(404).send({ message: 'The resource has not been removed' });
-
-        Comment.deleteMany({'_id':{'$in':resourceRemoved.comments}}, (err)=> {
-            if(err){
-                return res.status(500).send({ message: 'Error in the request. It can not be removed the resource comments' });
-            }
-
-            return res.status(200).send({ resource: resourceRemoved });
-        })
-
-    });
-}
-
-function updateResource(req, res) {
-    var resourceId = req.params.id;
-    var updateData = req.body;
-
-    Resource.findByIdAndUpdate(resourceId, updateData, {new:true}, (err, resourceUpdated) => {
-        if (err) return res.status(500).send({ message: 'Error in the request. The resource can not be updated' });
-
-        if (!resourceUpdated) return res.status(404).send({ message: 'The resource has not been updated' });
-
+    } catch (err) {
+        if (err.code === 'ENOENT') {
+            return res.status(200).send({ message: 'The file does not exits' });
+        } else {
+            return res.status(500).send({ message: 'Error requesting the file.' });
+        }
+    }
+};
+const deleteResource = async (req, res) => {
+    const resourceId = req.params.id;
+    try {
+        const resourceRemoved = await Resource.findByIdAndRemove({ user: req.user.sub, '_id': resourceId });
+        await Comment.deleteMany({'_id':{'$in':resourceRemoved.comments}});
+        return res.status(200).send({ resource: resourceRemoved });
+    } catch (err) {
+        return res.status(500).send({ message: 'Error in the request. It can not be removed the resource' });
+    }
+};
+const updateResource = async (req, res) => {
+    const resourceId = req.params.id;
+    const updateData = req.body;
+    try {
+        const resourceUpdated = await Resource.findByIdAndUpdate(resourceId, updateData, {new:true});
         return res.status(200).send({ resource: resourceUpdated });
-    });
-}
-
-function getResources(req, res) {
-    var page = req.params.page;
+    } catch (err) {
+        return res.status(500).send({ message: 'Error in the request. The resource can not be updated' });
+    }
+};
+const getResources = async (req, res) => {
+    const page = req.params.page || 1;
     let findQuery = {
         accepted: true
     };
@@ -125,27 +98,25 @@ function getResources(req, res) {
         findQuery.visible = true;
     }
 
-    Resource.find(findQuery)
-    .sort('name')
-    .populate({
-        path: 'comments',
-        populate: { path: 'user', select: 'name surname picture _id' }
-    })
-    .populate('author', 'name surname picture _id')
-    .paginate(page, ITEMS_PER_PAGE, (err, resources, total) => {
-        if (err) return res.status(500).send({ message: 'Error in the request. The resources were not found' });
-
-        if (!resources) return res.status(404).send({ message: 'No resources were found' });
-
+    try {
+        const resources = await Resource.find(findQuery)
+            .sort('name')
+            .populate({
+                path: 'comments',
+                populate: { path: 'user', select: 'name surname picture _id' }
+            })
+            .populate('author', 'name surname picture _id')
+            .paginate(page, ITEMS_PER_PAGE);
         return res.status(200).send({
             resources: resources,
             total: total,
             pages: Math.ceil(total / ITEMS_PER_PAGE)
         });
-    });
-}
-
-function getAllResources(req, res) {
+    } catch (err) {
+        return res.status(500).send({ message: 'Error in the request. The resources were not found' });
+    }
+};
+const getAllResources = async (req, res) => {
     let order = `-${req.params.order}`;
     let findQuery = {
         accepted: true
@@ -159,51 +130,43 @@ function getAllResources(req, res) {
         order = 'name';
     }    
 
-    Resource.find(findQuery).sort(order)
-    .populate({
-        path: 'comments',
-        populate: { path: 'user', select: 'name surname picture _id' }
-    })
-    .populate('author', 'name surname picture _id')
-    .exec((err, resources) => {
-        if (err) return res.status(500).send({ message: 'Error in the request. The resources were not found' });
-
-        if (!resources) return res.status(404).send({ message: 'No resources were found' });
-
+    try {
+        const resources = await Resource.find(findQuery).sort(order)
+            .populate({
+                path: 'comments',
+                populate: { path: 'user', select: 'name surname picture _id' }
+            })
+            .populate('author', 'name surname picture _id');
         return res.status(200).send({ resources: resources });
-
-    });
-}
-
-
-// A suggest resource is the one that has "accepted" in false
-function getSuggestResources(req, res) {
-    let page = 1;
-
-    if (req.params.page) {
-        page = req.params.page;
+    } catch (err) {
+        return res.status(500).send({ message: 'Error in the request. The resources were not found' });
     }
+};
 
-    Resource.find({accepted: false })
-    .populate('author', 'name surname picture _id')
-    .sort('name').paginate(page, ITEMS_PER_PAGE, (err, resources, total) => {
-        if (err) return res.status(500).send({ message: 'Error in the request. Could not get records' });
+const getSuggestResources = async (req, res) => {
+    const page = req.params.page || 1;
 
-        if (!resources) return res.status(404).send({ message: 'It was not found any record' });
-
+    try {
+        const resources = await Resource.find({accepted: false })
+            .populate('author', 'name surname picture _id')
+            .sort('name').paginate(page, ITEMS_PER_PAGE);
         return res.status(200).send({
             resources,
             total,
             pages: Math.ceil(total / ITEMS_PER_PAGE)
         });
-    });
-}
-
-async function removeFilesOfUpdates(res, httpCode, filePath, message) {
-    await fs.unlink(filePath, (err) => {
-        return res.status(httpCode).send({ message: message })
-    });
-}
+    } catch (err) {
+        return res.status(500).send({ message: 'Error in the request. Could not get records' });
+    }
+};
+const removeFilesOfUpdates = async (res, httpCode, filePath, message) => {
+    try {
+        await fs.unlink(filePath);
+        return res.status(httpCode).send({ message: message });
+    } catch (err) {
+        return res.status(httpCode).send({ message: message });
+    }
+};
 
 module.exports = {
     saveResource,

@@ -9,6 +9,8 @@ let bcrypt = require('bcryptjs');
 let moment = require('moment');
 let fs = require('fs');
 let path = require('path');
+const winston = require('winston');
+
 //let uuidv4 = require('uuid/v4'); --deprecated
 const { v4: uuidv4 } = require('uuid');
 
@@ -25,14 +27,11 @@ let Publication = require('../models/publication.model');
 const { ITEMS_PER_PAGE } = require('../config');
 const USERS_PATH = './uploads/users/';
 const saltR = 10;
+const saveUser = async (req, res) => {
+    const params = req.body;
+    const user = new User();
 
-function saveUser(req, res) {
-    let params = req.body;
-    let user = new User();
-
-    if (params.name && params.surname && params.email &&
-        params.password && params.role) {
-
+    if (params.name && params.surname && params.email && params.password && params.role) {
         user.name = params.name;
         user.surname = params.surname;
         user.password = params.password;
@@ -47,60 +46,47 @@ function saveUser(req, res) {
         user.contactNumber = params.contactNumber;
         user.socialNetworks = params.socialNetworks;
         user.created_at = moment().unix();
-        
-        // Check duplicate users
-        User.find({ email: user.email }, (err, users) => {
-            if (err) return res.status(500).send({ message: 'Error in the request. The user can not be found' });
 
+        try {
+            const users = await User.find({ email: user.email });
             if (users && users.length >= 1) {
                 return res.status(200).send({ message: 'User already exists' });
-            } else { 
-                bcrypt.genSalt(saltR, function(err, salt){
-                    bcrypt.hash(params.password, salt, (err, hash) => {
-                    user.password = hash;
-                    user.save((err, userStored) => {
-
-                        if (err) return res.status(500).send({ message: 'Error in the request. The user can not be saved' });
-
-                        if (!userStored) return res.status(404).send({ message: 'The user has not been saved' });
-
-                        mail.sendMail(
-                            'Nuevo usuario registrado',
-                            process.env.EMAIL,
-                            `
-                            <h3>Hola ${process.env.NAME}</h3>
-                            <p>Se ha registrado el usuario 
-                            <strong>${userStored.name} ${userStored.surname}</strong>
-                             con el correo electrónico 
-                            ${userStored.email}.</p>
-                            <p>
-                            Ingresa al <strong>panel de administración</strong> de reddinámica para revisar la información 
-                             del nuevo usuario.
-                             </p>
-                            `
-                        );
-
-                        delete userStored.password;
-                        return res.status(200).send({ user: userStored });
-                    });
-                    });
-                });
+            } else {
+                const salt = await bcrypt.genSalt(saltR);
+                user.password = await bcrypt.hash(params.password, salt);
+                const userStored = await user.save();
+                mail.sendMail(
+                    'Nuevo usuario registrado',
+                    process.env.EMAIL,
+                    `
+                    <h3>Hola ${process.env.NAME}</h3>
+                    <p>Se ha registrado el usuario 
+                    <strong>${userStored.name} ${userStored.surname}</strong>
+                     con el correo electrónico 
+                    ${userStored.email}.</p>
+                    <p>
+                    Ingresa al <strong>panel de administración</strong> de reddinámica para revisar la información 
+                     del nuevo usuario.
+                     </p>
+                    `
+                );
+                delete userStored.password;
+                return res.status(200).send({ user: userStored });
             }
-        });
-
+        } catch(err) {
+            return res.status(500).send({ message: 'Error in the request. The user can not be saved' });
+        }
     } else {
         return res.status(200).send({ message: 'You must fill all the required fields' });
     }
-}
-
-function saveUserByAdmin(req, res) {
-    let params = req.body;
-    let user = new User();
+};
+const saveUserByAdmin = async (req, res) => {
+    const params = req.body;
+    const user = new User();
 
     params.password = uuidv4().substr(0, 6);
     
     if (params.name && params.surname && params.email && params.role) {
-
         user.name = params.name;
         user.surname = params.surname;
         user.password = params.password;
@@ -115,230 +101,171 @@ function saveUserByAdmin(req, res) {
         user.city = params.city;
         user.created_at = moment().unix();
 
-        // Check duplicate users
-        User.find({ email: user.email }, (err, users) => {
-            if (err) return res.status(500).send({ message: 'Error in the request. The user can not be found' });
-
+        try {
+            const users = await User.find({ email: user.email });
             if (users && users.length >= 1) {
                 return res.status(200).send({ message: 'User already exists' });
             } else {
-                bcrypt.genSalt(saltR, function(err, salt) {
-                    bcrypt.hash(params.password, salt, (err, hash) => {
-                    user.password = hash;
-
-                    user.save((err, userStored) => {
-
-                        if (err) return res.status(500).send({ message: 'Error in the request. The user can not be saved' });
-
-                        if (!userStored) return res.status(404).send({ message: 'The user has not been saved' });
-
-                        mail.sendMail(
-                            'Contraseña Reddinámica',
-                            userStored.email,
-                            `
-                            <h3>Bienvenido a RedDinámica</h3>
-                            <p>La contraseña de inicio de sesión en RedDinámica es:  <strong>${params.password}</strong></p>
-                            
-                            Se recomienda cambiar la contraseña una vez se inicie sesión, esto se puede realizar ingresando a <strong>Opciones de seguridad</strong>.`
-                        );
-
-                        userStored.password = null;
-                        return res.status(200).send({ user: userStored });
-                    });
-                    });
-                });
+                const salt = await bcrypt.genSalt(saltR);
+                user.password = await bcrypt.hash(params.password, salt);
+                const userStored = await user.save();
+                mail.sendMail(
+                    'Contraseña Reddinámica',
+                    userStored.email,
+                    `
+                    <h3>Bienvenido a RedDinámica</h3>
+                    <p>La contraseña de inicio de sesión en RedDinámica es:  <strong>${params.password}</strong></p>
+                    
+                    Se recomienda cambiar la contraseña una vez se inicie sesión, esto se puede realizar ingresando a <strong>Opciones de seguridad</strong>.`
+                );
+                userStored.password = null;
+                return res.status(200).send({ user: userStored });
             }
-        });
-
+        } catch(err) {
+            return res.status(500).send({ message: 'Error in the request. The user can not be saved' });
+        }
     } else {
         return res.status(200).send({ message: 'You must fill all the required fields *****' });
     }
-}
+};
+const login = async (req, res) => {
+    const params = req.body;
+    const email = params.email;
+    const password = params.password;
 
+    try {
+        const user = await User.findOneAndUpdate({ email: email }, { $inc: { visits: 0.5 } }, { new: true })
+            .populate('city')
+            .populate('profession')
+            .populate('institution')
+            .exec();
 
-
-function login(req, res) {
-    let params = req.body;
-
-    let email = params.email;
-    let password = params.password;
-    // Views is incremented by 0.5 because when is called login in the client is called 
-    // twice
-    User.findOneAndUpdate({ email: email }, { $inc: { visits: 0.5 } }, { new: true })
-        .populate('city')
-        .populate('profession')
-        .populate('institution')
-        .exec((err, user) => {
-            if (err) return res.status(500).send({ message: 'Error in the request. The user can not be logged in' });
-
-            if (user) {
-                bcrypt.compare(password, user.password, (err, check) => {
-
-                    if (check) {
-
-                        if (params.getToken) {
-                            // Generate and return token
-                            return res.status(200).send({ token: jwt.createToken(user,algorithm,keySize) });
-
-                        } else {
-                            // Return user data
-                            user.password = null;
-
-                            return res.status(200).send({ user: user });
-                        }
-                    } else {
-                        return res.status(200).send({
-                            message: 'The user can not be logged in!',
-                            email: true
-                        });
-                    }
-                });
-
+        if (user) {
+            const check = await bcrypt.compare(password, user.password);
+            if (check) {
+                if (params.getToken) {
+                    return res.status(200).send({ token: jwt.createToken(user,algorithm,keySize) });
+                } else {
+                    user.password = null;
+                    return res.status(200).send({ user: user });
+                }
             } else {
                 return res.status(200).send({
-                    message: 'The email is not registered',
-                    email: false
+                    message: 'The user can not be logged in!',
+                    email: true
                 });
             }
-        });
-}
-
-function validatePassword(req, res) {
-    let params = req.body;
-
-    let password = params.password;
-    let email = req.user.email;
-
-    User.findOne({ email: email })
-        .exec((err, user) => {
-            if (err) return res.status(500).send({ message: 'Error in the request. The user can not be validate' });
-
-            if (user) {
-                bcrypt.compare(password, user.password, (err, check) => {
-                    return res.status(200).send(check);
-                });
-            } else {
-                return res.status(404).send({ message: 'The user cannot be found' });
-            }
-
-        });
-}
-
-function changePassword(req, res) {
-    let params = req.body;
-    let password = params.password;
-    let userId = req.user.sub;
-    
-
-    bcrypt.genSalt(saltR, function(err,salt){
-        bcrypt.hash(password, salt, (err, hash) => {
-
-        User.findByIdAndUpdate(userId, { password: hash }, { new: true })
-            .exec((err, userUpdated) => {
-
-                if (err) return res.status(500).send({ message: 'Error in the request. User has not been updated' });
-
-                if (!userUpdated) return res.status(404).send({ message: 'The user can not be updated' });
-
-                userUpdated.password = null;
-                return res.status(200).send({ user: userUpdated });
-            });
-        });
-    });
-}
-
-function recoverPassword(req, res) {
-    let params = req.body;
-    let password = uuidv4().substr(0, 6);
-    bcrypt.genSalt(saltR, function(err, salt){
-        bcrypt.hash(password, salt, (err, hash) => {
-
-        User.findOneAndUpdate({ email: params.email }, { password: hash }, { new: true })
-            .exec((err, userUpdated) => {
-
-                if (err) return res.status(500).send({ message: 'Error in the request. User has not been updated' });
-
-                if (!userUpdated) return res.status(404).send({ message: 'The user can not be updated' });
-
-                mail.sendMail(
-                    'Nueva contraseña Reddinámica',
-                    userUpdated.email,
-                    `
-                    <h3>Su contraseña de ingreso a RedDinámica se ha cambiado</h3>
-                    <p>
-                    Su nueva contraseña de inicio de sesión en RedDinámica es:  <strong>${password}</strong>
-                    </p>
-                    <p>
-                    Se recomienda cambiar la contraseña una vez se inicie sesión, esto se puede realizar ingresando a <strong>Opciones de seguridad</strong>.
-                    </p>
-                    `
-                );
-
-                userUpdated.password = null;
-                return res.status(200).send({ user: userUpdated });
-            });
-        });
-    });
-
-}
-
-function getUser(req, res) {
-    let userId = req.params.id;
-
-    User.findById(userId)
-        .populate('city')
-        .populate('profession')
-        .populate('institution')
-        .exec((err, user) => {
-            if (err) return res.status(500).send({ message: 'Error in the request. User can not be found' });
-
-            if (!user) return res.status(404).send({ message: 'User doesn\'t exist' });
-
-            user.password = null;
-
-            followThisUser(req.user.sub, userId).then((value) => {
-                return res.status(200).send({
-                    user,
-                    following: value.following,
-                    follower: value.follower
-                });
-            });
-        });
-}
-
-// A new user is the one that has "actived" in false
-function getNewUsers(req, res) {
-    let page = 1;
-
-    if (req.params.page) {
-        page = req.params.page;
-    }
-
-    User.find({ actived: false }, '-password').sort('name')
-        .populate('city')
-        .populate('profession')
-        .populate('institution')
-        .paginate(page, ITEMS_PER_PAGE, (err, users, total) => {
-            if (err) return res.status(500).send({ message: 'Error in the request. Could not get records' });
-
-            if (!users) return res.status(404).send({ message: 'It was not found any user' });
-
-
+        } else {
             return res.status(200).send({
-                users,
-                total,
-                pages: Math.ceil(total / ITEMS_PER_PAGE)
+                message: 'The email is not registered',
+                email: false
             });
-        });
-}
+        }
+    } catch(err) {
+        return res.status(500).send({ message: 'Error in the request. The user can not be logged in' });
+    }
+};
 
-function updateUser(req, res) {
-    let userId = req.params.id;
-    let update = req.body;
+const validatePassword = async (req, res) => {
+    const params = req.body;
+    const password = params.password;
+    const email = req.user.email;
 
-    // Delete password property
+    try {
+        const user = await User.findOne({ email: email }).exec();
+        if (user) {
+            const check = await bcrypt.compare(password, user.password);
+            return res.status(200).send(check);
+        } else {
+            return res.status(404).send({ message: 'The user cannot be found' });
+        }
+    } catch(err) {
+        return res.status(500).send({ message: 'Error in the request. The user can not be validate' });
+    }
+};
+
+const changePassword = async (req, res) => {
+    const params = req.body;
+    const password = params.password;
+    const userId = req.user.sub;
+
+    const salt = await bcrypt.genSalt(saltR);
+    const hash = await bcrypt.hash(password, salt);
+
+    try {
+        const userUpdated = await User.findByIdAndUpdate(userId, { password: hash }, { new: true }).exec();
+        if (!userUpdated) return res.status(404).send({ message: 'The user can not be updated' });
+        userUpdated.password = null;
+        return res.status(200).send({ user: userUpdated });
+    } catch(err) {
+        return res.status(500).send({ message: 'Error in the request. User has not been updated' });
+    }
+};
+
+const recoverPassword = async (req, res) => {
+    const params = req.body;
+    const password = uuidv4().substr(0, 6);
+
+    const salt = await bcrypt.genSalt(saltR);
+    const hash = await bcrypt.hash(password, salt);
+
+    try {
+        const userUpdated = await User.findOneAndUpdate({ email: params.email }, { password: hash }, { new: true }).exec();
+        if (!userUpdated) return res.status(404).send({ message: 'The user can not be updated' });
+        mail.sendMail(
+            'Nueva contraseña Reddinámica',
+            userUpdated.email,
+            `
+            <h3>Su contraseña de ingreso a RedDinámica se ha cambiado</h3>
+            <p> Su nueva contraseña de inicio de sesión en RedDinámica es:  <strong>${password}</strong> </p>
+            <p> Se recomienda cambiar la contraseña una vez se inicie sesión, esto se puede realizar ingresando a <strong>Opciones de seguridad</strong>. </p>
+            `
+        );
+        userUpdated.password = null;
+        return res.status(200).send({ user: userUpdated });
+    } catch(err) {
+        return res.status(500).send({ message: 'Error in the request. User has not been updated' });
+    }
+};
+
+const getUser = async (req, res) => {
+    const userId = req.params.id;
+
+    try {
+        const user = await User.findById(userId)
+            .populate('city')
+            .populate('profession')
+            .populate('institution')
+            .exec();
+        if (!user) return res.status(404).send({ message: 'User doesn\'t exist' });
+        user.password = null;
+        const value = await followThisUser(req.user.sub, userId);
+        return res.status(200).send({ user, following: value.following, follower: value.follower });
+    } catch(err) {
+        return res.status(500).send({ message: 'Error in the request. User can not be found' });
+    }
+};
+
+const getNewUsers = async (req, res) => {
+    const page = req.params.page || 1;
+
+    try {
+        const users = await User.find({ actived: false }, '-password').sort('name')
+            .populate('city')
+            .populate('profession')
+            .populate('institution')
+            .paginate(page, ITEMS_PER_PAGE);
+        if (!users) return res.status(404).send({ message: 'It was not found any user' });
+        return res.status(200).send({ users, total, pages: Math.ceil(total / ITEMS_PER_PAGE) });
+    } catch(err) {
+        return res.status(500).send({ message: 'Error in the request. Could not get records' });
+    }
+};
+
+const updateUser = async (req, res) => {
+    const userId = req.params.id;
+    const update = req.body;
     delete update.password;
-
 
     if (userId != req.user.sub) {
         if (!['admin', 'delegated_admin'].includes(req.user.role)) {
@@ -346,26 +273,23 @@ function updateUser(req, res) {
         }
     }
 
-    User.findByIdAndUpdate(userId, update, { new: true })
-        .populate('city')
-        .populate('profession')
-        .populate('institution')
-        .exec((err, userUpdated) => {
-
-            if (err) return res.status(500).send({ message: 'Error in the request. User has not been updated' });
-
-            if (!userUpdated) return res.status(404).send({ message: 'The user can not be updated' });
-
-            userUpdated.password = null;            
-            return res.status(200).send({ user: userUpdated });
-        });
-
-}
-
-function deleteUser(req, res) {
-
-    let userId = req.params.id;
-    let user = {
+    try {
+        const userUpdated = await User.findByIdAndUpdate(userId, update, { new: true })
+            .populate('city')
+            .populate('profession')
+            .populate('institution');
+        if (!userUpdated) {
+            return res.status(404).send({ message: 'The user can not be updated' });
+        }
+        userUpdated.password = null;
+        return res.status(200).send({ user: userUpdated });
+    } catch (err) {
+        return res.status(500).send({ message: 'Error in the request. User has not been updated' });
+    }
+};
+const deleteUser = async (req, res) => {
+    const userId = req.params.id || req.user.sub;
+    const user = {
         name:'Usuario RedDinámica',
         surname:'',
         password:'',        
@@ -381,226 +305,179 @@ function deleteUser(req, res) {
         created_at:moment().unix()
     }   
 
-    if (!userId) {
-        userId = req.user.sub;
-    }
+    try {
+        const userRemoved = await User.findOneAndUpdate({ _id: userId }, user);
 
-    User.findOneAndUpdate({ _id: userId }, user, (err, userRemoved) => {
-        console.log(err)
-        if (err) return res.status(500).send({ message: 'Error in the request. The user can not be removed' });
+        if (!userRemoved) {
+            return res.status(404).send({ message: 'The user can not be removed, it has not been found' });
+        }
 
-        if (!userRemoved) return res.status(404).send({ message: 'The user can not be removed, it has not been found' });
-
-        Follow.find({ $or: [{ followed: userId }, { user: userId }] }).remove().exec();
-        Publication.find({ user: userId }).remove().exec();
+        await Follow.deleteMany({ $or: [{ followed: userId }, { user: userId }] });
+        await Publication.deleteMany({ user: userId });
 
         return res.status(200).send({ user: userRemoved });
-    });
-
-
-
+    } catch (err) {
+        winston.error(err);
+        return res.status(500).send({ message: 'Error in the request. The user can not be removed' });
+    }
 }
 
-// Upload profile photo
-function uploadProfilePic(req, res) {
-    let userId = req.params.id;
-    let filePath = req.file.path;
-    let filename = req.file.filename;
+const uploadProfilePic = async (req, res) => {
+    const userId = req.params.id;
+    const filePath = req.file.path;
+    const filename = req.file.filename;
 
     if (req.file) {
-
         if (userId != req.user.sub) {
             return removeFilesOfUpdates(res, 403, filePath, 'You do not have permission to update user data');
         }
 
-        User.findByIdAndUpdate(userId, { picture: filename }, { new: true }, (err, userUpdated) => {
+        try {
+            const userUpdated = await User.findByIdAndUpdate(userId, { picture: filename }, { new: true });
 
-            if (err) return removeFilesOfUpdates(res, 500, filePath, 'Error in the request. The image user can not be upadated');
-
-            if (!userUpdated) return removeFilesOfUpdates(res, 404, filePath, 'The user has not been updated');
+            if (!userUpdated) {
+                return removeFilesOfUpdates(res, 404, filePath, 'The user has not been updated');
+            }
 
             userUpdated.password = null;
             return res.status(200).send({ user: userUpdated });
-        });
-
-    } else {
-        return res.status(200).send({ message: 'No file has been uploaded' })
-    }
-}
-
-function getProfilePic(req, res) {
-    let imageFile = req.params.imageFile;
-    let pathFile = path.resolve(USERS_PATH, imageFile);
-
-
-    // Validate if the file exists
-    fs.stat(pathFile, (err, stat) => {
-        if (err) {
-            if (err.code === 'ENOENT') {
-                return res.status(200).send({ message: 'The image does not exits' });
-            } else { // en caso de otro error
-                return res.status(500).send({ message: 'Error requesting the image.' });
-            }
+        } catch (err) {
+            return removeFilesOfUpdates(res, 500, filePath, 'Error in the request. The image user can not be upadated');
         }
-        return res.sendFile(pathFile);
-    });
-}
-
-async function followThisUser(identityUserId, userId) {
-
-    let following = await Follow.findOne({ "user": identityUserId, "followed": userId }, (err, follow) => {
-        if (err) return handleError(err);
-
-        return follow;
-    });
-
-    let follower = await Follow.findOne({ "user": userId, "followed": identityUserId }, (err, follow) => {
-        if (err) return handleError(err);
-
-        return follow;
-    });
-
-    return {
-        following: following,
-        follower: follower
+    } else {
+        return res.status(200).send({ message: 'No file has been uploaded' });
     }
 }
 
-function getUsers(req, res) {
-    let userId = req.user.sub;
+const getProfilePic = async (req, res) => {
+    const imageFile = req.params.imageFile;
+    const pathFile = path.resolve(USERS_PATH, imageFile);
+
+    try {
+        // Validate if the file exists
+        await fs.promises.stat(pathFile);
+        return res.sendFile(pathFile);
+    } catch (err) {
+        if (err.code === 'ENOENT') {
+            return res.status(200).send({ message: 'The image does not exits' });
+        } else {
+            // en caso de otro error
+            return res.status(500).send({ message: 'Error requesting the image.' });
+        }
+    }
+}
+
+const followThisUser = async (identityUserId, userId) => {
+    try {
+        const following = await Follow.findOne({ "user": identityUserId, "followed": userId });
+        const follower = await Follow.findOne({ "user": userId, "followed": identityUserId });
+        return { following: following, follower: follower };
+    } catch (err) {
+        return handleError(err);
+    }
+}
+
+const getUsers = async (req, res) => {
+    const userId = req.user.sub;
     let page = 1;
 
     if (req.params.page) {
         page = req.params.page;
     }
 
-    User.find({name:{$ne: 'Usuario RedDinámica'}},'-password').sort('name')
-        .populate('city')
-        .populate('profession')
-        .populate('institution')
-        .paginate(page, ITEMS_PER_PAGE, (err, users, total) => {
-            if (err) return res.status(500).send({ message: 'Error in the request' });
+    try {
+        const users = await User.find({name:{$ne: 'Usuario RedDinámica'}},'-password').sort('name')
+            .populate('city')
+            .populate('profession')
+            .populate('institution')
+            .paginate(page, ITEMS_PER_PAGE);
 
-            if (!users) return res.status(404).send({ message: 'There are no users' });
+        if (!users) {
+            return res.status(404).send({ message: 'There are no users' });
+        }
 
-            
-            followsUserId(userId).then((value) => {
-                return res.status(200).send({
-                    users,
-                    following: value.following,
-                    followers: value.followers,
-                    total,
-                    pages: Math.ceil(total / ITEMS_PER_PAGE),
-
-                });
-            });
-
+        const value = await followsUserId(userId);
+        return res.status(200).send({
+            users,
+            following: value.following,
+            followers: value.followers,
+            total,
+            pages: Math.ceil(total / ITEMS_PER_PAGE),
         });
-}
-
-function getAllUsers(req, res) {
-    let userId = req.user.sub;
-
-    User.find({name:{$ne: 'Usuario RedDinámica'}}, '-password').sort('name')
-        .populate('city')
-        .populate('profession')
-        .populate('institution')
-        .exec((err, users) => {
-            if (err) return res.status(500).send({ message: 'Error in the request' });
-
-            if (!users) return res.status(404).send({ message: 'There are not users' });
-
-            followsUserId(userId).then((value) => {
-                return res.status(200).send({
-                    users,
-                    following: value.following,
-                    followers: value.followers
-                });
-            });
-
-        });
-}
-
-async function followsUserId(userId) {
-
-    let following = await Follow.find({ user: userId }, { '_id': 0, '_v': 0, 'user': 0 }, (err, follows) => {
-        return follows;
-    });
-
-    let following_clean = [];
-
-    following.forEach((follow) => {
-        following_clean.push(follow.followed);
-    });
-
-    let followers = await Follow.find({ followed: userId }, { '_id': 0, '_v': 0, 'followed': 0 }, (err, follows) => {
-        return follows;
-    });
-
-    let followers_clean = [];
-
-    followers.forEach((follow) => {
-        followers_clean.push(follow.user);
-    });
-
-
-    return {
-        following: following_clean,
-        followers: followers_clean
-    };
-}
-
-
-
-
-
-async function removeFilesOfUpdates(res, httpCode, filePath, message) {
-    await fs.unlink(filePath, (err) => {
-        return res.status(httpCode).send({ message: message })
-    });
-}
-
-function getCounters(req, res) {
-    let userId = req.user.sub;
-
-    if (req.params.id) {
-        userId = req.params.id;
-    }
-
-    getCountFollow(userId).then((value) => {
-        return res.status(200).send(value)
-    });
-
-}
-
-async function getCountFollow(userId) {
-    let following = await Follow.countDocuments({ user: userId }, (err, count) => {
-        if (err) return handleError(err);
-
-        return count;
-    });
-
-    let followed = await Follow.countDocuments({ followed: userId }, (err, count) => {
-        if (err) return handleError(err);
-
-        return count;
-    });
-
-    let publications = await Publication.countDocuments({ user: userId }, (err, count) => {
-        if (err) return handleError(err);
-
-        return count;
-    });
-
-    return {
-        following: following,
-        followed: followed,
-        publications: publications
+    } catch (err) {
+        return res.status(500).send({ message: 'Error in the request' });
     }
 }
 
+const getAllUsers = async (req, res) => {
+    const userId = req.user.sub;
 
+    try {
+        const users = await User.find({name:{$ne: 'Usuario RedDinámica'}}, '-password').sort('name')
+            .populate('city')
+            .populate('profession')
+            .populate('institution');
 
+        if (!users) {
+            return res.status(404).send({ message: 'There are not users' });
+        }
+
+        const value = await followsUserId(userId);
+        return res.status(200).send({ users, following: value.following, followers: value.followers });
+    } catch (err) {
+        return res.status(500).send({ message: 'Error in the request' });
+    }
+}
+
+const followsUserId = async (userId) => {
+    try {
+        const following = await Follow.find({ user: userId }, { '_id': 0, '_v': 0, 'user': 0 });
+        const following_clean = following.map(follow => follow.followed);
+
+        const followers = await Follow.find({ followed: userId }, { '_id': 0, '_v': 0, 'followed': 0 });
+        const followers_clean = followers.map(follow => follow.user);
+
+        return { following: following_clean, followers: followers_clean };
+    } catch (err) {
+        return handleError(err);
+    }
+}
+
+const removeFilesOfUpdates = async (res, httpCode, filePath, message) => {
+    try {
+        await fs.promises.unlink(filePath);
+        return res.status(httpCode).send({ message: message });
+    } catch (err) {
+        return handleError(err);
+    }
+}
+
+const getCounters = async (req, res) => {
+    const userId = req.params.id || req.user.sub;
+
+    try {
+        const value = await getCountFollow(userId);
+        return res.status(200).send(value);
+    } catch (err) {
+        // handle error
+    }
+}
+
+const getCountFollow = async (userId) => {
+    try {
+        const following = await Follow.countDocuments({ user: userId });
+        const followed = await Follow.countDocuments({ followed: userId });
+        const publications = await Publication.countDocuments({ user: userId });
+
+        return {
+            following: following,
+            followed: followed,
+            publications: publications
+        }
+    } catch (err) {
+        return handleError(err);
+    }
+}
 
 module.exports = {
     saveUser,

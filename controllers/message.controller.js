@@ -1,118 +1,80 @@
-'use strict'
-let {ITEMS_PER_PAGE} = require('../config');
+'use strict';
+const { ITEMS_PER_PAGE } = require('../config');
+const mongoosePaginate = require('mongoose-pagination');
+const moment = require('moment');
+const fs = require('fs');
+const User = require('../models/user.model');
+const Follow = require('../models/follow.model');
+const Message = require('../models/message.model');
 
-// Load libraries
-let mongoosePaginate = require('mongoose-pagination');
-let moment = require('moment');
-let fs = require('fs');
-
-// Load models
-let User = require('../models/user.model');
-let Follow = require('../models/follow.model');
-let Message = require('../models/message.model');
-
-function saveMessage(req, res){
-    let params = req.body;
-
+const saveMessage = async (req, res) => {
+    const params = req.body;
     if(!params.text || !params.receiver) return res.status(200).send({message: 'Send the required data'});
-
-    let message = new Message();
-
+    const message = new Message();
     message.emitter = req.user.sub;
     message.receiver = params.receiver;
     message.text = params.text;
     message.created_at = moment().unix();
     message.viewed = 'false';
-
-    message.save((err, messageStored) => {
-        if(err) return res.status(500).send({message: 'Error in the request. The message cannot be saved.'});
-
-        if(!messageStored) return res.status(404).send({message: 'The message has not saved'});
-
+    try {
+        const messageStored = await message.save();
         return res.status(200).send({message: messageStored});
-    });
-}
-
-function getReceiveMessages(req, res){
-    let userId = req.user.sub;
-
-    let page = 1;
-
-    if(req.params.page){
-        page = req.params.page;
+    } catch (err) {
+        return res.status(500).send({message: 'Error in the request. The message cannot be saved.'});
     }
+};
 
-    Message.find({receiver: userId}).sort('-created_at').populate('emitter', 'name surname role picture _id').paginate(page, ITEMS_PER_PAGE, (err, messages, total) =>{
-        if(err) return res.status(500).send({message: 'Error in the request. The message cannot be obtained.'});
-
-        if(!messages) return res.status(404).send({message: 'There are no messages'});
-
-        
-        return res.status(200).send({
-            total,
-            pages: Math.ceil(total/ITEMS_PER_PAGE),
-            messages: messages
-        });
-    });
-}
-
-function getEmittedMessages(req, res){
-    let userId = req.user.sub;
-
-    let page = 1;
-
-    if(req.params.page){
-        page = req.params.page;
+const getReceiveMessages = async (req, res) => {
+    const userId = req.user.sub;
+    const page = req.params.page || 1;
+    try {
+        const messages = await Message.find({receiver: userId}).sort('-created_at').populate('emitter', 'name surname role picture _id').paginate(page, ITEMS_PER_PAGE);
+        return res.status(200).send({ total, pages: Math.ceil(total/ITEMS_PER_PAGE), messages: messages });
+    } catch (err) {
+        return res.status(500).send({message: 'Error in the request. The message cannot be obtained.'});
     }
+};
 
-    Message.find({emitter: userId}).sort('-created_at').populate('receiver', 'name surname picture role _id').paginate(page, ITEMS_PER_PAGE, (err, messages, total) =>{
-        if(err) return res.status(500).send({message: 'Error in the request. The message cannot be obtained.'});
+const getEmittedMessages = async (req, res) => {
+    const userId = req.user.sub;
+    const page = req.params.page || 1;
+    try {
+        const messages = await Message.find({emitter: userId}).sort('-created_at').populate('receiver', 'name surname picture role _id').paginate(page, ITEMS_PER_PAGE);
+        return res.status(200).send({ total, pages: Math.ceil(total/ITEMS_PER_PAGE), messages: messages });
+    } catch (err) {
+        return res.status(500).send({message: 'Error in the request. The message cannot be obtained.'});
+    }
+};
 
-        if(!messages) return res.status(404).send({message: 'There are no messages'});
-        
-        return res.status(200).send({
-            total,
-            pages: Math.ceil(total/ITEMS_PER_PAGE),
-            messages: messages
-        });
-    });
-}
+const getUnviewedMessages = async (req, res) => {
+    const userId = req.user.sub;
+    try {
+        const count = await Message.countDocuments({receiver:userId, viewed:'false'});
+        return res.status(200).send({ 'unviewed': count });
+    } catch (err) {
+        return res.status(500).send({message: 'Error in the request. The count can not be made'});
+    }
+};
 
-function getUnviewedMessages(req, res){
-    let userId = req.user.sub;
+const setViewedMessage = async (req, res) => {
+    const userId = req.user.sub;
+    try {
+        const messagesUpdated = await Message.updateMany({receiver:userId, viewed:'false'}, {viewed:'true'}, {multi:'true'});
+        return res.status(200).send({ messagesUpdated });
+    } catch (err) {
+        return res.status(500).send({message: 'Error in the request. The message can not be updated'});
+    }
+};
 
-    Message.countDocuments({receiver:userId, viewed:'false'}, (err, count) => {
-        if(err) return res.status(500).send({message: 'Error in the request. The count can not be made'});
-
-        return res.status(200).send({
-            'unviewed': count
-        });        
-    });
-}
-
-function setViewedMessage(req, res){
-    let userId = req.user.sub;
-
-    Message.updateMany({receiver:userId, viewed:'false'}, {viewed:'true'}, {multi:'true'}, (err, messagesUpdated) => {
-        if(err) return res.status(500).send({message: 'Error in the request. The message can not be updated'});
-
-        return res.status(200).send({
-            messagesUpdated
-        });    
-    });
-}
-
-function deleteMessage(req, res) {
-    let messageId = req.params.id;
-
-    Message.findByIdAndRemove(messageId, (err, messageRemoved) => {
-        if (err) return res.status(500).send({ message: 'Error in the request. It can not be removed the message' });
-
-        if (!messageRemoved) return res.status(404).send({ message: 'The publication has not been removed' });
-
+const deleteMessage = async (req, res) => {
+    const messageId = req.params.id;
+    try {
+        const messageRemoved = await Message.findByIdAndRemove(messageId);
         return res.status(200).send({ message: messageRemoved });
-    });
-}
+    } catch (err) {
+        return res.status(500).send({ message: 'Error in the request. It can not be removed the message' });
+    }
+};
 
 module.exports = {
     saveMessage,
