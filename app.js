@@ -1,45 +1,74 @@
 'use strict'
 
 // app.js has all the set up for express
-let express = require('express');
-let path = require('path');
-
-// Generate a random nonce (16 bytes) as a hexadecimal string
-const crypto = require("crypto");
 const helmet = require('helmet');
-let app = express();
+const express = require('express');
+const crypto = require('crypto');
+const path = require('path');
 
-// Generate a random nonce value
-const generateNonce = () => {
-  return crypto.randomBytes(16).toString('base64');
-};
+const app = express();
+const nonce = crypto.randomBytes(32).toString("hex");
+const trusted = ["'self'"];
+// Middleware to set 'x-content-type-options' header
+app.use((req, res, next) => {
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  next();
+});
+// Serve JavaScript files with the correct MIME type
+app.get('/*.js', (req, res, next) => {
+  res.type('application/javascript');
+  next();
+});
 
-// Pass the generated nonce value to your front-end application
-const nonce = generateNonce();
+app.set('view engine', 'ejs');
+app.use(express.static(path.join(__dirname, 'client'))); // Serve static files first
 
+app.get('/', (req, res) => {
+  res.render('index.html', { nonce }); // Pass nonce to the template
+});
 
+if (process.env.NODE_ENV !== 'production') {
+  trusted.push('http://localhost:*', 'ws://localhost:*');
+}
+
+app.get('/*.css', (req, res) => {
+  res.setHeader('Content-Type', 'text/css');
+  // Rest of the code to send the CSS file
+});
 
 app.use(
   helmet.contentSecurityPolicy({
     directives: {
-      defaultSrc: ["'self'"],
+      defaultSrc: trusted,
       scriptSrc: [
-        "'self'",
-        "'unsafe-eval'",
         "'strict-dynamic'",
-        `'nonce-${nonce}'`,
         'https://cdnjs.cloudflare.com',
-        'http://localhost:3800', // Allow scripts from your local host
-        'http://localhost:4200',
-      ],
-      scriptSrcElem: ["'self'", 'http://localhost:3800','http://localhost:4200'], // Allow script elements from your local host
-      scriptSrcAttr: ["'self'", "'unsafe-inline'", `'nonce-${nonce}'`], // Allowing unsafe-inline for inline event handlers
-      styleSrc: ["'self'", 'https://fonts.googleapis.com', 'https://cdnjs.cloudflare.com'],
-      fontSrc: [
-        "'self'",
+        'https://kit.fontawesome.com',
         'https://fonts.googleapis.com',
+        `'nonce-${nonce}'`,
+      ].concat(trusted),
+      styleSrc: [
+        'https://fonts.googleapis.com',
+        'https://cdnjs.cloudflare.com',
         'https://fonts.gstatic.com',
-        'https://kit.fontawesome.com/5c86bdc790.js'],
+        `'nonce-${nonce}'`,
+
+      ].concat(trusted),
+      fontSrc: [
+        'https://*.cloudflare.com',
+        'https://*.gstatic.com',
+        'https://*.googleapis.com',
+        'https://*.fontawesome.com',
+        'data:', // Allowing data URIs for fonts
+      ].concat(trusted),
+      scriptSrcAttr: [].concat(trusted),
+      connectSrc: [
+        'https://simon.uis.edu.co',
+        'https://fonts.gstatic.com', // Allowing preconnect for fonts.gstatic.com
+      ].concat(trusted),
+      imgSrc: ['data:'].concat(trusted),
+      frameAncestors: ["'none'"],
+      objectSrc: ["'none'"],
     },
   })
 );
@@ -50,7 +79,7 @@ var corsOptions = {
   origin: ['https://simon.uis.edu.co', 'https://simon.uis.edu.co/reddinamica', 'http://localhost:4200', 'https://localhost:4200'],
   methods: 'GET,POST,PUT,DELETE,PATCH', // Allow all specified methods
   optionsSuccessStatus: 204, // 200; some legacy browsers (IE11, various SmartTVs) choke on 204
-  allowedHeaders: ['font-display', 'font-family', 'font-style', 'font-weight', 'src', 'Content-Type', 'authorization'], // Add 'authorization' here
+  allowedHeaders: ['font-display', 'font-family', 'font-style', 'font-weight', 'src', 'Content-Type', 'authorization','Accept','X-requested-with','Origin'], // Add 'authorization' here
   exposedHeaders: ['Content-Type', 'Content-Length', 'Date', 'ETag', 'Accept-Ranges']
 }
 // Load routes
