@@ -17,6 +17,7 @@ app.use((req, res, next) => {
 // Serve JavaScript files with the correct MIME type
 app.get('/*.js', (req, res, next) => {
   res.type('application/javascript');
+  res.setHeader('X-Content-Type-Options', 'nosniff');
   next();
 });
 
@@ -28,12 +29,12 @@ app.get('/', (req, res) => {
 });
 
 if (process.env.NODE_ENV !== 'production') {
-  trusted.push('http://localhost:*', 'ws://localhost:*');
+  trusted.push('http://localhost:4200/*', 'ws://localhost:*');
 }
 
 app.get('/*.css', (req, res) => {
   res.setHeader('Content-Type', 'text/css');
-  // Rest of the code to send the CSS file
+  res.setHeader('X-Content-Type-Options', 'nosniff');
 });
 
 app.use(
@@ -73,15 +74,38 @@ app.use(
   })
 );
 
+//debug
+app.use((req, res, next) => {
+  if (process.env.NODE_ENV !== 'production') {
+    console.log('Incoming Request:', req.method, req.path);
+    console.log('Headers:', req.headers);
+  }
+  next();
+});
+
+
 //cors
 var cors = require('cors');
 var corsOptions = {
-  origin: ['https://simon.uis.edu.co', 'https://simon.uis.edu.co/reddinamica', 'http://localhost:4200', 'https://localhost:4200'],
-  methods: 'GET,POST,PUT,DELETE,PATCH', // Allow all specified methods
-  optionsSuccessStatus: 204, // 200; some legacy browsers (IE11, various SmartTVs) choke on 204
-  allowedHeaders: ['font-display', 'font-family', 'font-style', 'font-weight', 'src', 'Content-Type', 'authorization','Accept','X-requested-with','Origin'], // Add 'authorization' here
-  exposedHeaders: ['Content-Type', 'Content-Length', 'Date', 'ETag', 'Accept-Ranges']
-}
+  origin: function (origin, callback) {
+    if (!origin || ['http://localhost:4200', 'https://localhost:4200'].indexOf(origin) !== -1) {
+      callback(null, true);
+    } else {
+      callback(new Error('Not allowed by CORS'));
+    }
+  },
+  methods: 'GET,POST,PUT,DELETE,PATCH,OPTIONS',
+  allowedHeaders: ['Content-Type', 'Authorization'],
+  optionsSuccessStatus: 204, // some legacy browsers (IE11, various SmartTVs) choke on 204
+};
+
+// var corsOptions = {
+// //  origin: ['https://simon.uis.edu.co', 'https://simon.uis.edu.co/reddinamica', 'http://localhost:4200/*', 'https://localhost:4200/*','*'],
+// origin:['http://localhost:4200/*','*'],  
+// methods: 'GET,POST,PUT,DELETE,PATCH,OPTIONS',
+// allowedHeaders: ['Content-Type', 'Authorization'],
+// optionsSuccessStatus: 204, // 200; some legacy browsers (IE11, various SmartTVs) choke on 204
+// }
 // Load routes
 let institutionRoutes = require('./routes/institution.routes');
 let cityRoutes = require('./routes/city.routes');
@@ -100,6 +124,7 @@ app.use(express.urlencoded({ extended: false })); //Parse URL-encoded bodies
 app.use(express.json({limit:"20000kb"})); 
 
 // Cors
+//app.use(cors(corsOptions));
 app.use(cors(corsOptions));
 // x-frame option
 // ...

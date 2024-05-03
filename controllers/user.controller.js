@@ -247,21 +247,38 @@ const getUser = async (req, res) => {
 };
 
 const getNewUsers = async (req, res) => {
-    const page = req.params.page || 1;
+    const page = parseInt(req.params.page) || 1;
 
     try {
-        const users = await User.find({ actived: false }, '-password').sort('name')
-            .populate('city')
-            .populate('profession')
-            .populate('institution')
-            .paginate(page, ITEMS_PER_PAGE);
-        if (!users) return res.status(404).send({ message: 'It was not found any user' });
-        return res.status(200).send({ users, total, pages: Math.ceil(total / ITEMS_PER_PAGE) });
+        const options = {
+            page: page,
+            limit: ITEMS_PER_PAGE,
+            sort: { name: 1 }, // Sorting by name ascending
+            populate: [
+                { path: 'city' },
+                { path: 'profession' },
+                { path: 'institution' }
+            ]
+        };
+
+        const result = await User.paginate({ actived: false }, options);
+
+        if (result.totalDocs === 0) {
+            return res.status(404).send({ message: 'It was not found any user' });
+        }
+
+        return res.status(200).send({
+            users: result.docs, // The actual users data
+            totalItems: result.totalDocs,
+            totalPages: result.totalPages,
+            currentPage: result.page,
+            itemsPerPage: result.limit,
+        });
     } catch(err) {
+        console.error(err);
         return res.status(500).send({ message: 'Error in the request. Could not get records' });
     }
 };
-
 const updateUser = async (req, res) => {
     const userId = req.params.id;
     const update = req.body;
@@ -379,35 +396,37 @@ const followThisUser = async (identityUserId, userId) => {
 
 const getUsers = async (req, res) => {
     const userId = req.user.sub;
-    let page = 1;
-
-    if (req.params.page) {
-        page = req.params.page;
-    }
+    let page = req.params.page || 1; // Default to page 1 if no page is provided
 
     try {
-        const users = await User.find({name:{$ne: 'Usuario RedDinámica'}},'-password').sort('name')
-            .populate('city')
-            .populate('profession')
-            .populate('institution')
-            .paginate(page, ITEMS_PER_PAGE);
+        const options = {
+            page: page,
+            limit: ITEMS_PER_PAGE,
+            sort: { created_at: -1 }, // Sorting by created at
+            select: '-password', // Excluding password field
+            populate: ['city', 'profession', 'institution']
+        };
 
-        if (!users) {
+        const result = await User.paginate({ name: { $ne: 'Usuario RedDinámica' } }, options);
+        if (!result) {
             return res.status(404).send({ message: 'There are no users' });
         }
-
         const value = await followsUserId(userId);
+
         return res.status(200).send({
-            users,
+            users: result.docs, // The paginated result documents
             following: value.following,
             followers: value.followers,
-            total,
-            pages: Math.ceil(total / ITEMS_PER_PAGE),
+            totalItems: result.totalDocs, // Total number of documents that match the query
+            totalPages: result.totalPages, // Total pages
+            currentPage: result.page, // Current page number
+            itemsPerPage: result.limit // Number of items per page
         });
-    } catch (err) {
+    } catch (error) {
+        console.error('Error fetching users:', error);
         return res.status(500).send({ message: 'Error in the request' });
     }
-}
+};
 
 const getAllUsers = async (req, res) => {
     const userId = req.user.sub;
@@ -418,7 +437,7 @@ const getAllUsers = async (req, res) => {
             .populate('profession')
             .populate('institution');
 
-        if (!users) {
+        if (!users.length) {
             return res.status(404).send({ message: 'There are not users' });
         }
 

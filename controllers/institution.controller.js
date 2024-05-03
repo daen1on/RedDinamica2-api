@@ -51,6 +51,7 @@ const getAllInstitutions = async (req, res) => {
         const institutions = await Institution.find().sort('name').populate('city').exec();
         return res.status(200).send({ institutions });
     } catch (err) {
+        console.error(err); //log the error to console
         return res.status(500).send({ message: 'Error in the request. The institutions were not found' });
     }
 };

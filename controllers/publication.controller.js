@@ -2,7 +2,7 @@
 let { ITEMS_PER_PAGE } = require('../config');
 
 // Load libraries
-let mongoosePaginate = require('mongoose-pagination');
+
 let moment = require('moment');
 let fs = require('fs');
 let path = require('path');
@@ -29,36 +29,76 @@ const savePublication = async (req, res) => {
     }
 };
 const getPublications = async (req, res) => {
-    const page = req.params.page || 1;
+    const page = parseInt(req.params.page) || 1;
     const follows = await Follow.find({ user: req.user.sub }).populate('followed');
-    let followsClean = [];
-    follows.forEach((follow) => {
-        followsClean.push(follow.followed);
-    });
-    followsClean.push(req.user.sub);
+    let followsClean = follows.map(follow => follow.followed._id);
+    followsClean.push(req.user.sub); // Includes the user's own publications for fetching
+
     try {
-        const publications = await Publication.find({ user: { "$in": followsClean } })
-            .sort('-created_at')
-            .populate({ path: 'comments', populate: { path: 'user', select: 'name surname picture _id' } })
-            .populate('user', 'name surname picture _id')
-            .paginate(page, ITEMS_PER_PAGE);
-        return res.status(200).send({ total: total, pages: Math.ceil(total / ITEMS_PER_PAGE), itemsPerPage: ITEMS_PER_PAGE, publications });
+        const options = {
+            page,
+            limit: ITEMS_PER_PAGE,
+            sort: { created_at: -1 },
+            populate: [
+                { 
+                    path: 'comments', 
+                    populate: { path: 'user', select: 'name surname picture _id' } 
+                },
+                { 
+                    path: 'user', 
+                    select: 'name surname picture _id' 
+                }
+            ]
+        };
+
+        // Execute paginated query
+        const result = await Publication.paginate({ user: { "$in": followsClean } }, options);
+
+        return res.status(200).send({
+            totalItems: result.totalDocs,
+            totalPages: result.totalPages,
+            currentPage: result.page,
+            itemsPerPage: result.limit,
+            publications: result.docs // This is where the actual publications are stored
+        });
     } catch (err) {
-        return res.status(500).send({ message: 'Error in the request. It can not be get the publications' });
-    }
-};const getUserPublications = async (req, res) => {
-    const page = req.params.page || 1;
-    const userId = req.params.id;
-    try {
-        const publications = await Publication.find({ user: userId })
-            .sort('-created_at')
-            .populate({ path: 'comments', populate: { path: 'user', select: 'name surname picture _id' } })
-            .paginate(page, ITEMS_PER_PAGE);
-        return res.status(200).send({ total: total, pages: Math.ceil(total / ITEMS_PER_PAGE), itemsPerPage: ITEMS_PER_PAGE, publications });
-    } catch (err) {
-        return res.status(500).send({ message: 'Error in the request. It can not be get the publications' });
+        console.error(err); // Log the error to the console for debugging
+        return res.status(500).send({ message: 'Error in the request. It can not get the publications' });
     }
 };
+
+
+const getUserPublications = async (req, res) => {
+    const page = parseInt(req.params.page) || 1;
+    const userId = req.params.id;
+
+    try {
+        const options = {
+            page: page,
+            limit: ITEMS_PER_PAGE, 
+            sort: { created_at: -1 },
+            populate: {
+                path: 'comments',
+                populate: { path: 'user', select: 'name surname picture _id' }
+            }
+        };
+
+        // Using paginate method
+        const result = await Publication.paginate({ user: userId }, options);
+
+        return res.status(200).send({
+            totalItems: result.totalDocs,
+            totalPages: result.totalPages,
+            currentPage: result.page,
+            itemsPerPage: result.limit,
+            publications: result.docs // The documents are returned in the docs property
+        });
+    } catch (err) {
+        console.error(err); //log the error to console
+        return res.status(500).send({ message: 'Error in the request. It can not get the publications' });
+    }
+};
+
 
 const getPublication = async (req, res) => {
     const publicationId = req.params.id;
@@ -73,11 +113,23 @@ const getPublication = async (req, res) => {
 const deletePublication = async (req, res) => {
     const publicationId = req.params.id;
     try {
-        const publicationRemoved = await Publication.findByIdAndRemove({ user: req.user.sub, '_id': publicationId });
-        await Comment.remove({'_id':{'$in':publicationRemoved.comments}});
-        return res.status(200).send({ publication: publicationRemoved });
+        const publicationRemoved = await Publication.findOneAndDelete({ _id: publicationId, user: req.user.sub });
+
+        if (!publicationRemoved) {
+            return res.status(404).send({ message: 'Publication not found or user not authorized to delete this publication.' });
+        }
+
+        // If you need to remove related comments
+        await Comment.deleteMany({ '_id': { '$in': publicationRemoved.comments } });
+
+        // Example: Calculate last valid page (this will need to be adjusted to your pagination logic)
+        const count = await Publication.countDocuments();
+        const lastValidPage = Math.ceil(count / ITEMS_PER_PAGE); // Assuming ITEMS_PER_PAGE is defined
+
+        return res.status(200).send({ publication: publicationRemoved, lastValidPage: lastValidPage });
     } catch (err) {
-        return res.status(500).send({ message: 'Error in the request. It can not be removed the publication' });
+        console.log(err);
+        return res.status(500).send({ message: 'Error in the request. The publication cannot be removed.' });
     }
 };
 const uploadPublicationFile = async (req, res) => {

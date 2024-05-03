@@ -1,6 +1,8 @@
 'use strict'
 
 var mongoose = require('mongoose');
+var mongoosePaginate = require('mongoose-paginate-v2');
+
 var schema = mongoose.Schema;
 
 var publicationSchema = schema({
@@ -10,5 +12,8 @@ var publicationSchema = schema({
     comments:[{type: schema.ObjectId, ref: 'Comment'}],
     file:String
 });
+
+// Apply the pagination plugin to the publication schema
+publicationSchema.plugin(mongoosePaginate);
 
 module.exports = mongoose.model('Publication', publicationSchema);

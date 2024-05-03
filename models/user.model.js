@@ -1,6 +1,8 @@
 'use strict'
 
 var mongoose = require('mongoose');
+const mongoosePaginate = require('mongoose-paginate-v2');
+
 var schema = mongoose.Schema;
 
 var userSchema = schema({
@@ -23,5 +25,6 @@ var userSchema = schema({
     socialNetworks:String,
     created_at:String
 });
+userSchema.plugin(mongoosePaginate);
 
 module.exports = mongoose.model('User', userSchema);

@@ -1,11 +1,18 @@
-'use strict'
+'use strict';
 
-var mongoose = require('mongoose');
-var schema = mongoose.Schema;
+const mongoose = require('mongoose');
+const mongoosePaginate = require('mongoose-paginate-v2');
 
-var followSchema = schema({    
-    user:{type: schema.ObjectId, ref: 'User'},
-    followed:{type: schema.ObjectId, ref: 'User'}
+const schema = mongoose.Schema;
+
+var followSchema = new schema({
+    user: {type: schema.ObjectId, ref: 'User', index: true},
+    followed: {type: schema.ObjectId, ref: 'User', index: true}
+}, {
+    timestamps: true // This adds createdAt and updatedAt fields automatically
 });
+
+// Apply the pagination plugin to the schema
+followSchema.plugin(mongoosePaginate);
 
 module.exports = mongoose.model('Follow', followSchema);

@@ -122,6 +122,8 @@ const getLessons = async (req, res) => {
             .paginate(page, ITEMS_PER_PAGE);
         return res.status(200).send({ lessons: lessons, total: total, pages: Math.ceil(total / ITEMS_PER_PAGE) });
     } catch (err) {
+        console.log(err);
+
         return res.status(500).send({ message: 'Error in the request. The lessons were not found' });
     }
 };
@@ -263,6 +265,7 @@ const getAllCalls = async (req, res) => {
             .populate('knowledge_area', 'name');
         return res.status(200).send({ lessons });
     } catch (err) {
+        console.log(err);
         return res.status(500).send({ message: 'Error in the request. Could not get records' });
     }
 };
