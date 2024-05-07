@@ -263,12 +263,9 @@ const getNewUsers = async (req, res) => {
 
         const result = await User.paginate({ actived: false }, options);
 
-        if (result.totalDocs === 0) {
-            return res.status(404).send({ message: 'It was not found any user' });
-        }
-
+        // Instead of returning 404, just return the empty data with a 200 status code
         return res.status(200).send({
-            users: result.docs, // The actual users data
+            users: result.docs, // The actual users data, can be empty array
             totalItems: result.totalDocs,
             totalPages: result.totalPages,
             currentPage: result.page,
@@ -279,6 +276,7 @@ const getNewUsers = async (req, res) => {
         return res.status(500).send({ message: 'Error in the request. Could not get records' });
     }
 };
+
 const updateUser = async (req, res) => {
     const userId = req.params.id;
     const update = req.body;
