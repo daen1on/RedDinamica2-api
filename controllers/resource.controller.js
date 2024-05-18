@@ -71,13 +71,18 @@ const getResourceFile = async (req, res) => {
 const deleteResource = async (req, res) => {
     const resourceId = req.params.id;
     try {
-        const resourceRemoved = await Resource.findByIdAndRemove({ user: req.user.sub, '_id': resourceId });
-        await Comment.deleteMany({'_id':{'$in':resourceRemoved.comments}});
+        const resourceRemoved = await Resource.findOneAndDelete({ user: req.user.sub, _id: resourceId });
+        if (!resourceRemoved) {
+            return res.status(404).send({ message: 'Resource not found' });
+        }
+        await Comment.deleteMany({ _id: { $in: resourceRemoved.comments } });
         return res.status(200).send({ resource: resourceRemoved });
     } catch (err) {
-        return res.status(500).send({ message: 'Error in the request. It can not be removed the resource' });
+        console.log(err);
+        return res.status(500).send({ message: 'Error in the request. The resource cannot be removed' });
     }
 };
+
 const updateResource = async (req, res) => {
     const resourceId = req.params.id;
     const updateData = req.body;

@@ -87,13 +87,17 @@ const setViewedMessages = async (req, res) => {
 const deleteMessage = async (req, res) => {
     const messageId = req.params.id;
     try {
-        const messageRemoved = await Message.findByIdAndRemove(messageId);
+        const messageRemoved = await Message.findByIdAndDelete(messageId);
+        if (!messageRemoved) {
+            return res.status(404).send({ message: 'Message not found' });
+        }
         return res.status(200).send({ message: messageRemoved });
     } catch (err) {
         console.log(err);
         return res.status(500).send({ message: 'Error in the request. The message cannot be removed' });
     }
 };
+
 
 module.exports = {
     saveMessage,

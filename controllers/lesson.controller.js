@@ -2,6 +2,8 @@
 
 const Lesson = require('../models/lesson.model');
 const Comment = require('../models/comment.model');
+const moment = require('moment');
+
 const mail = require('../services/mail.service');
 const fs = require('fs').promises; // Use promise-based version of fs
 const path = require('path');
@@ -31,8 +33,8 @@ const sendPaginatedResponse = (res, data) => {
 
 const saveLesson = async (req, res) => {
     const { body: params } = req;
-    const lesson = new Lesson({ ...params, created_at: new Date() });
-
+    const lesson = new Lesson(params);
+    lesson.created_at = moment().unix();
     try {
         const lessonStored = await lesson.save();
         const emailSubject = params.class === 'suggest' ? 'Nueva sugerencia de lección' : 'Nueva experencia registrada';
@@ -71,16 +73,18 @@ const deleteLesson = async (req, res) => {
     const { id: lessonId } = req.params;
 
     try {
-        const lessonRemoved = await Lesson.findByIdAndRemove(lessonId);
+        const lessonRemoved = await Lesson.findByIdAndDelete(lessonId);
         if (!lessonRemoved) {
             return handleError(res, 'Lesson not found', 404);
         }
         await Comment.deleteMany({ _id: { $in: lessonRemoved.comments } });
         return res.status(200).send({ lesson: lessonRemoved });
     } catch (err) {
+        console.log(err);
         return handleError(res);
     }
 };
+
 
 const updateLesson = async (req, res) => {
     const { id: lessonId } = req.params;
@@ -210,10 +214,23 @@ const getExperiences = async (req, res) => {
 
 
 // Helper to populate lesson fields consistently
+
 const populateLesson = () => [
     { path: 'development_group', select: 'name surname picture role _id' },
     { path: 'author', select: 'name surname picture role _id' },
-    // Add other necessary populate fields
+    { path: 'expert', select: 'name surname picture role _id' },
+    { path: 'leader', select: 'name surname picture role _id' },
+    { path: 'call.interested', select: 'name surname picture role _id' },
+    { path: 'conversations.author', select: 'name surname picture role _id' },
+    { path: 'expert_comments.author', select: 'name surname picture role _id' },
+    // For comments, assuming each comment has an 'author' or 'user' field
+    {
+        path: 'comments',
+        populate: { 
+            path: 'user', // or 'user', depending on your schema
+            select: 'name surname picture _id'
+        }
+    }
 ];
 
 

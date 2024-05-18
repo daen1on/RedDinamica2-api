@@ -43,7 +43,7 @@ const lessonSchema = new Schema({
     author: { type: Schema.Types.ObjectId, ref: 'User' },
     leader: { type: Schema.Types.ObjectId, ref: 'User' },
     development_group: [{ type: Schema.Types.ObjectId, ref: 'User' }],
-    created_at: { type: Date, default: Date.now },
+    created_at:String,
     visible: { type: Boolean, default: false },
     accepted: { type: Boolean, default: false },
     knowledge_area: [{ type: Schema.Types.ObjectId, ref: 'Knowledge-area' }],

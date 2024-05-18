@@ -31,10 +31,14 @@ const updateComment = async (req, res) => {
 const deleteComment = async (req, res) => {
     const commentId = req.params.id;
     try {
-        const commentRemoved = await Comment.findByIdAndRemove(commentId);
+        const commentRemoved = await Comment.findByIdAndDelete(commentId);
+        if (!commentRemoved) {
+            return res.status(404).send({ message: 'Comment not found' });
+        }
         return res.status(200).send({ comment: commentRemoved });
     } catch (err) {
-        return res.status(500).send({ message: 'Error in the request. The comment can not be removed' });
+        console.log(err);
+        return res.status(500).send({ message: 'Error in the request. The comment cannot be removed' });
     }
 };
 
