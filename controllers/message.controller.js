@@ -68,11 +68,11 @@ const getUnviewedMessages = async (req, res) => {
         const count = await Message.countDocuments({ receiver: userId, viewed: false });
         return res.status(200).send({ 'unviewed': count });
     } catch (err) {
-        console.log(err);
+        console.error('Error in getUnviewedMessages:', err);
         return res.status(500).send({ message: 'Error in the request. The count cannot be made' });
     }
-};
-
+ };
+ 
 const setViewedMessages = async (req, res) => {
     const userId = req.user.sub;
     try {
