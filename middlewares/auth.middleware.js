@@ -6,7 +6,7 @@ let SECRET_KEY = process.env.SECRET_KEY;
 
 exports.ensureAuth = function(req, res, next){
     let token, payload;
-    
+
     if(!req.headers.authorization){
         return res.status(400).send({message: 'Request hasn\'t got authorization header'});
     }else{
