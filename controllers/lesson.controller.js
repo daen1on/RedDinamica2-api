@@ -3,6 +3,7 @@
 const Lesson = require('../models/lesson.model');
 const Comment = require('../models/comment.model');
 const moment = require('moment');
+const LESSON_PATH = './uploads/lessons/';
 
 const mail = require('../services/mail.service');
 const fs = require('fs').promises; // Use promise-based version of fs
@@ -88,16 +89,35 @@ const deleteLesson = async (req, res) => {
 
 const updateLesson = async (req, res) => {
     const { id: lessonId } = req.params;
-    const updateData = { ...req.body, ...(req.body.call && { 'call.created_at': new Date() }) };
+    const updateData = { ...req.body };
+
+    // Si req.body.call existe, desglosar sus propiedades individualmente para evitar el conflicto
+    if (req.body.call) {
+        for (const key in req.body.call) {
+            updateData[`call.${key}`] = req.body.call[key];
+        }
+        delete updateData.call; // Eliminar el objeto call del updateData para evitar el conflicto
+    }
+
+    console.log("Incoming Request: PUT /api/lesson/:id");
+    console.log("Lesson ID:", lessonId);
+    console.log("Update Data:", updateData);  // Log de los datos que llegan para depuración
 
     try {
         const lessonUpdated = await Lesson.findByIdAndUpdate(lessonId, updateData, { new: true })
             .populate(populateLesson());
+        if (!lessonUpdated) {
+            console.log("Lesson not found");
+            return res.status(404).send({ message: 'Lesson not found' });
+        }
+        console.log("Lesson updated successfully");
         return res.status(200).send({ lesson: lessonUpdated });
     } catch (err) {
-        return handleError(res);
+        console.error("Error updating lesson:", err);  // Log del error para detalles adicionales
+        return res.status(500).send({ message: 'Error updating lesson', error: err.message });
     }
 };
+
 
 const getLesson = async (req, res) => {
     const { id: lessonId } = req.params;
@@ -114,14 +134,28 @@ const getLesson = async (req, res) => {
 };
 
 const getLessons = async (req, res) => {
-    const page = parseInt(req.query.page) || 1;
+    const { page = 1, limit = 10 } = req.query;
+    const skip = (page - 1) * limit;
+
     try {
-        const lessons = await Lesson.paginate({}, { page, limit: ITEMS_PER_PAGE });
-        sendPaginatedResponse(res, lessons);
+        const lessons = await Lesson.find({ accepted: false })
+            .skip(skip)
+            .limit(limit)
+            .populate(populateLesson());
+
+        const total = await Lesson.countDocuments({ accepted: false });
+
+        return res.status(200).send({
+            lessons,
+            total,
+            pages: Math.ceil(total / limit)
+        });
     } catch (err) {
-        handleError(res, 'Error fetching lessons');
+        console.error("Error getting lessons:", err);
+        return res.status(500).send({ message: 'Error getting lessons', error: err.message });
     }
 };
+
 
 const getAllLessons = async (req, res) => {
     const order = req.query.order ? { [req.query.order]: -1 } : { created_at: -1 };
