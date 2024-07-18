@@ -23,7 +23,9 @@ var userSchema = schema({
     visits:{type:Number, default:0},
     contactNumber:String,
     socialNetworks:String,
-    created_at:String
+    created_at:String,
+    resetPasswordToken: String,
+    resetPasswordExpires: Date
 });
 userSchema.plugin(mongoosePaginate);
 

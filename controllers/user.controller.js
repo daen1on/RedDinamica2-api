@@ -5,13 +5,13 @@ const algorithm = process.env.ALGORITHM || 'HS256'; // Use default value 'HS256'
 const keySize = parseInt(process.env.KEYSIZE) || 32; // Use default value 32 if environment variable is not set or is not a valid integer
 
 // Libraries
+const crypto = require('crypto');
 let bcrypt = require('bcryptjs');
 let moment = require('moment');
 let fs = require('fs');
 let path = require('path');
 const winston = require('winston');
 
-//let uuidv4 = require('uuid/v4'); --deprecated
 const { v4: uuidv4 } = require('uuid');
 
 // Services
@@ -22,6 +22,8 @@ let mail = require('../services/mail.service');
 let User = require('../models/user.model');
 let Follow = require('../models/follow.model');
 let Publication = require('../models/publication.model');
+const Institution = require('../models/institution.model'); 
+const Profession = require('../models/profession.model'); 
 
 // Constant
 const { ITEMS_PER_PAGE } = require('../config');
@@ -40,14 +42,36 @@ const saveUser = async (req, res) => {
         user.role = params.role;
         user.postgraduate = params.postgraduate;
         user.knowledge_area = params.knowledge_area;
-        user.profession = params.profession;
-        user.institution = params.institution;
         user.city = params.city;
         user.contactNumber = params.contactNumber;
         user.socialNetworks = params.socialNetworks;
         user.created_at = moment().unix();
 
         try {
+            // Check if the institution exists or create a new one
+            if (params.institution && typeof params.institution === 'object' && params.institution.name) {
+                let institution = await Institution.findOne({ name: params.institution.name });
+                if (!institution) {
+                    institution = new Institution(params.institution);
+                    await institution.save();
+                }
+                user.institution = institution._id;
+            } else if (params.institution && typeof params.institution === 'string') {
+                user.institution = params.institution;
+            }
+
+            // Check if the profession exists or create a new one
+            if (params.profession && typeof params.profession === 'object' && params.profession.name) {
+                let profession = await Profession.findOne({ name: params.profession.name });
+                if (!profession) {
+                    profession = new Profession(params.profession);
+                    await profession.save();
+                }
+                user.profession = profession._id;
+            } else if (params.profession && typeof params.profession === 'string') {
+                user.profession = params.profession;
+            }
+
             const users = await User.find({ email: user.email });
             if (users && users.length >= 1) {
                 return res.status(200).send({ message: 'User already exists' });
@@ -65,7 +89,7 @@ const saveUser = async (req, res) => {
                      con el correo electrónico 
                     ${userStored.email}.</p>
                     <p>
-                    Ingresa al <strong>panel de administración</strong> de reddinámica para revisar la información 
+                    Ingresa al <strong>panel de administración</strong> de RedDinámica para revisar la información 
                      del nuevo usuario.
                      </p>
                     `
@@ -73,13 +97,17 @@ const saveUser = async (req, res) => {
                 delete userStored.password;
                 return res.status(200).send({ user: userStored });
             }
-        } catch(err) {
+        } catch (err) {
+            console.error('Error saving user:', err); // Enhanced error logging
             return res.status(500).send({ message: 'Error in the request. The user can not be saved' });
         }
     } else {
-        return res.status(200).send({ message: 'You must fill all the required fields' });
+        console.warn('Missing required fields:', params); // Log missing fields for debugging
+        return res.status(400).send({ message: 'You must fill all the required fields' });
     }
 };
+
+
 const saveUserByAdmin = async (req, res) => {
     const params = req.body;
     const user = new User();
@@ -125,7 +153,7 @@ const saveUserByAdmin = async (req, res) => {
             return res.status(500).send({ message: 'Error in the request. The user can not be saved' });
         }
     } else {
-        return res.status(200).send({ message: 'You must fill all the required fields *****' });
+        return res.status(200).send({ message: 'Debes llenar todos los campos*****' });
     }
 };
 const login = async (req, res) => {
@@ -157,7 +185,7 @@ const login = async (req, res) => {
             }
         } else {
             return res.status(200).send({
-                message: 'The email is not registered',
+                message: 'El email no esta registrado',
                 email: false
             });
         }
@@ -203,30 +231,70 @@ const changePassword = async (req, res) => {
 };
 
 const recoverPassword = async (req, res) => {
-    const params = req.body;
-    const password = uuidv4().substr(0, 6);
-
-    const salt = await bcrypt.genSalt(saltR);
-    const hash = await bcrypt.hash(password, salt);
+    const { email } = req.body;
 
     try {
-        const userUpdated = await User.findOneAndUpdate({ email: params.email }, { password: hash }, { new: true }).exec();
-        if (!userUpdated) return res.status(404).send({ message: 'The user can not be updated' });
-        mail.sendMail(
-            'Nueva contraseña Reddinámica',
-            userUpdated.email,
+        const user = await User.findOne({ email }).exec();
+        if (!user) {
+            return res.status(404).send({ message: 'Usuario no encontrado' });
+        }
+
+        const token = crypto.randomBytes(32).toString('hex');
+        const expires = new Date(Date.now() + 3600000); // El token expira en 1 hora
+        const resetPasswordUrl = process.env.NODE_ENV === 'production'
+        ? process.env.RESET_PASSWORD_URL_PROD
+        : process.env.RESET_PASSWORD_URL_DEV;
+        user.resetPasswordToken = token;
+        user.resetPasswordExpires = expires;
+
+        await user.save();
+
+        const resetLink = `${resetPasswordUrl}${token}`;
+        await mail.sendMail(
+            'Restablecimiento de Contraseña para RedDinámica',
+            user.email,
             `
-            <h3>Su contraseña de ingreso a RedDinámica se ha cambiado</h3>
-            <p> Su nueva contraseña de inicio de sesión en RedDinámica es:  <strong>${password}</strong> </p>
-            <p> Se recomienda cambiar la contraseña una vez se inicie sesión, esto se puede realizar ingresando a <strong>Opciones de seguridad</strong>. </p>
+            <h3>Solicitud de Restablecimiento de Contraseña</h3>
+            <p>Has solicitado un restablecimiento de contraseña para tu cuenta de RedDinámica. Haz clic en el enlace a continuación para restablecer tu contraseña:</p>
+            <p><a href="${resetLink}">Restablecer Contraseña</a></p>
+            <p>Si no solicitaste esto, por favor ignora este correo.</p>
             `
         );
-        userUpdated.password = null;
-        return res.status(200).send({ user: userUpdated });
-    } catch(err) {
-        return res.status(500).send({ message: 'Error in the request. User has not been updated' });
+        res.status(200).json({ user: { _id: user._id, email: user.email }, message: 'Correo de restablecimiento de contraseña enviado' });
+    } catch (err) {
+        console.log(err);
+        res.status(500).send({ message: 'Error en la solicitud' });
     }
 };
+
+const resetPassword = async (req, res) => {
+    const { token, newPassword } = req.body;
+
+    try {
+        const user = await User.findOne({
+            resetPasswordToken: token,
+            resetPasswordExpires: { $gt: Date.now() }
+        }).exec();
+
+        if (!user) {
+            return res.status(400).send({ message: 'Token de restablecimiento de contraseña inválido o expirado' });
+        }
+
+        const salt = await bcrypt.genSalt(10);
+        const hash = await bcrypt.hash(newPassword, salt);
+
+        user.password = hash;
+        user.resetPasswordToken = undefined;
+        user.resetPasswordExpires = undefined;
+
+        await user.save();
+
+        res.status(200).send({ user, message: 'Contraseña restablecida correctamente' });
+    } catch (err) {
+        res.status(500).send({ message: 'Error en la solicitud' });
+    }
+};
+
 
 const getUser = async (req, res) => {
     const userId = req.params.id;
@@ -511,6 +579,7 @@ module.exports = {
     updateUser,
     deleteUser,
     uploadProfilePic,
-    getProfilePic
+    getProfilePic,
+    resetPassword
 
 }

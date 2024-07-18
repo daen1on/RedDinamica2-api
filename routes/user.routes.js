@@ -19,7 +19,7 @@ api.post('/login', userController.login);
 api.post('/validate-password', auth.ensureAuth, userController.validatePassword);
 api.post('/change-password', auth.ensureAuth, userController.changePassword);
 api.post('/recover-password', userController.recoverPassword);
-
+api.post('/reset-password', userController.resetPassword);
 api.put('/user-update/:id', auth.ensureAuth, userController.updateUser);
 api.delete('/user', auth.ensureAuth, userController.deleteUser);
 api.delete('/user/:id', [auth.ensureAuth, controlAccess.isAdmin], userController.deleteUser);
