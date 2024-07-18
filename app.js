@@ -88,7 +88,7 @@ app.use((req, res, next) => {
 var cors = require('cors');
 var corsOptions = {
   origin: function (origin, callback) {
-    if (!origin || ['http://localhost:4200', 'https://localhost:4200'].indexOf(origin) !== -1) {
+    if (!origin || ['http://localhost:3800','http://localhost:4200', 'https://localhost:4200'].indexOf(origin) !== -1) {
       callback(null, true);
     } else {
       callback(new Error('Not allowed by CORS'));
@@ -118,6 +118,8 @@ let messageRoutes = require('./routes/message.routes');
 let resourceRoutes = require('./routes/resource.routes');
 let lessonRoutes = require('./routes/lesson.routes');
 let userRoutes = require('./routes/user.routes');
+let errorReportRoutes = require('./routes/errorReports.routes');
+let notificationRoutes = require('./routes/notification.routes');
 
 // Middlewares
 app.use(express.urlencoded({ extended: false })); //Parse URL-encoded bodies
@@ -154,6 +156,8 @@ app.use('/api', messageRoutes);
 app.use('/api', resourceRoutes);
 app.use('/api', lessonRoutes);
 app.use('/api', userRoutes);
+app.use('/api', errorReportRoutes); 
+app.use('/api', notificationRoutes);
 
 // Rewrite url
 app.use('*', function(req, res, next){
