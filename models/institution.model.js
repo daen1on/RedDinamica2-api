@@ -1,15 +1,20 @@
-'use strict'
+'use strict';
 
-var mongoose = require('mongoose');
-var schema = mongoose.Schema;
+const mongoose = require('mongoose');
+const mongoosePaginate = require('mongoose-paginate-v2');
+const { Schema } = mongoose;
 
-var userSchema = schema({
-    name:String,
-    email:String,
-    website:String,
-    telephone:String,
-    city: {type: schema.ObjectId, ref: 'City'},
-    used:{type:Boolean, default: false}
+const institutionSchema = new Schema({
+    name: { type: String, required: true },
+    email: { type: String },
+    website: { type: String },
+    telephone: { type: String },
+    city: { type: Schema.Types.ObjectId, ref: 'City'},
+    used: { type: Boolean, default: false }
+}, {
+    timestamps: true // Adds createdAt and updatedAt fields
 });
 
-module.exports = mongoose.model('Institution', userSchema);
+institutionSchema.plugin(mongoosePaginate);
+
+module.exports = mongoose.model('Institution', institutionSchema);
