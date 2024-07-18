@@ -1,11 +1,14 @@
-'use strict'
+'use strict';
 
 var mongoose = require('mongoose');
 var schema = mongoose.Schema;
+const mongoosePaginate = require('mongoose-paginate-v2');
 
-var userSchema = schema({
-    name:String,
-    used:{type:Boolean, default: false}
+var knowledgeAreaSchema = schema({
+    name: { type: String, required: true },
+    used: { type: Boolean, default: false }
 });
 
-module.exports = mongoose.model('Knowledge-area', userSchema);
+knowledgeAreaSchema.plugin(mongoosePaginate);
+
+module.exports = mongoose.model('KnowledgeArea', knowledgeAreaSchema);
