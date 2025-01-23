@@ -2,9 +2,6 @@
 const { ITEMS_PER_PAGE } = require('../config');
 const KnowledgeArea = require('../models/knowledge-area.model');
 const levenshtein = require('fast-levenshtein');
-const natural = require('natural');
-const SoundEx = natural.SoundEx;
-const soundex = new SoundEx(); // Crear instancia de SoundEx
 const normalizeString = (str) => {
     return str.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
 };
@@ -22,20 +19,20 @@ const saveArea = async (req, res) => {
     }
 
     const normalizedName = normalizeString(name);
-    const soundexName = soundex.process(normalizedName); // Usar el método process de la instancia
     const threshold = levenshteinThreshold(normalizedName);
 
     try {
         const existingAreas = await KnowledgeArea.find({});
         for (const area of existingAreas) {
-            const existingSoundex = soundex.process(normalizeString(area.name)); // Usar el método process de la instancia
-            if (existingSoundex === soundexName || levenshtein.get(normalizedName, normalizeString(area.name)) <= threshold) {
-                return res.status(400).send({ message: 'Knowledge area already exists or is too similar to an existing one' });
+            if (levenshtein.get(normalizedName, normalizeString(area.name)) <= threshold) {
+                console.log('returning area to replace', area);
+                return res.status(200).send({replace:area }); //in case of a match, return the area that should be replaced
             }
         }
 
         const knowledgeArea = new KnowledgeArea({ name });
         const areaStored = await knowledgeArea.save();
+        console.log(areaStored)
         return res.status(200).send({ area: areaStored });
     } catch (err) {
         console.log(err);
@@ -51,7 +48,7 @@ const saveAreas = async (req, res) => {
             const existingAreas = await KnowledgeArea.find({});
             for (const area of existingAreas) {
                 if (normalizeString(area.name) === normalizedName || levenshtein.get(normalizedName, normalizeString(area.name)) <= 2) {
-                    return res.status(400).send({ message: `Knowledge area ${param.name} already exists or is too similar to an existing one` });
+                    return res.status(200).send({replace:area }); //in case of a match, return the area that should be replaced
                 }
             }
         }
@@ -90,6 +87,9 @@ const getAreas = async (req, res) => {
     }
 };
 
+
+
+/******  2acb23b9-3922-42d4-bb3a-c02bdfd452ac  *******/
 const getAllAreas = async (req, res) => {
     try {
         const areas = await KnowledgeArea.find().sort('name').exec();
