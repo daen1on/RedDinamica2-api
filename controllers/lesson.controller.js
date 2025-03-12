@@ -71,7 +71,7 @@ const getLessonFile = async (req, res) => {
 };
 
 const deleteLesson = async (req, res) => {
-    const { id: lessonId } = req.params;
+    const lessonId = req.params.id;
 
     try {
         const lessonRemoved = await Lesson.findByIdAndDelete(lessonId);
@@ -132,18 +132,24 @@ const getLesson = async (req, res) => {
         return handleError(res);
     }
 };
-
 const getLessons = async (req, res) => {
     const { page = 1, limit = 10 } = req.query;
+    const { visibleOnes } = req.params; // Get visibleOnes from params
     const skip = (page - 1) * limit;
+    
+    // Determine the value of 'accepted' based on 'visibleOnes'
+    const acceptedValue = visibleOnes === 'true'; // Assuming 'true' string for true, anything else for false
+
+    console.log('visibleOnes (from params):', visibleOnes, 'accepted:', acceptedValue);
 
     try {
-        const lessons = await Lesson.find({ accepted: false })
+        const lessons = await Lesson.find({ accepted: acceptedValue }) // Use the boolean value here
             .skip(skip)
             .limit(limit)
             .populate(populateLesson());
 
-        const total = await Lesson.countDocuments({ accepted: false });
+        const total = await Lesson.countDocuments({ accepted: acceptedValue }); // Match the count with the find query
+        console.log("Total lessons found:", total);
 
         return res.status(200).send({
             lessons,
@@ -157,11 +163,16 @@ const getLessons = async (req, res) => {
 };
 
 
+
+
 const getAllLessons = async (req, res) => {
     const order = req.query.order ? { [req.query.order]: -1 } : { created_at: -1 };
     try {
         const lessons = await Lesson.find({}).sort(order);
-        res.status(200).send({ lessons });
+        const total = await Lesson.countDocuments({});
+        console.log("Total lessons found:", total);
+        console.log("entered get all lessons", lessons.length);
+        res.status(200).send({ lessons, total, pages: Math.ceil(total / ITEMS_PER_PAGE) });
     } catch (err) {
         handleError(res);
     }
@@ -248,24 +259,28 @@ const getExperiences = async (req, res) => {
 
 
 // Helper to populate lesson fields consistently
-
-const populateLesson = () => [
-    { path: 'development_group', select: 'name surname picture role _id' },
-    { path: 'author', select: 'name surname picture role _id' },
-    { path: 'expert', select: 'name surname picture role _id' },
-    { path: 'leader', select: 'name surname picture role _id' },
-    { path: 'call.interested', select: 'name surname picture role _id' },
-    { path: 'conversations.author', select: 'name surname picture role _id' },
-    { path: 'expert_comments.author', select: 'name surname picture role _id' },
-    // For comments, assuming each comment has an 'author' or 'user' field
-    {
-        path: 'comments',
-        populate: { 
-            path: 'user', // or 'user', depending on your schema
-            select: 'name surname picture _id'
-        }
-    }
-];
+function populateLesson() {
+    return [
+        { path: 'author', select: 'name surname picture role _id' },
+        { path: 'leader', select: 'name surname picture role _id' },
+        { path: 'expert', select: 'name surname picture role _id' },
+        { path: 'development_group', select: 'name surname picture role _id' },
+        { path: 'knowledge_area', select: 'name' }, // Assuming you only need the name
+        {
+            path: 'conversations',
+            populate: { path: 'author', select: 'name surname picture role _id' }
+        },
+        {
+            path: 'expert_comments',
+            populate: { path: 'author', select: 'name surname picture role _id' }
+        },
+        {
+            path: 'comments',
+            populate: { path: 'user', select: 'name surname picture _id' }
+        },
+        { path: 'son_lesson', select: '_id visible' }
+    ];
+}
 
 
 

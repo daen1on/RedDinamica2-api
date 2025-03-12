@@ -35,7 +35,7 @@ const lessonSchema = new Schema({
     references: String,
     justification: String,
     development_level: String,
-    level: String,
+    level: [String],
     state: String,
     type: String,
     call: callSchema,
