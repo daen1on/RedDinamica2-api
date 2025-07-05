@@ -2,18 +2,27 @@
 const { ITEMS_PER_PAGE } = require('../config');
 const User = require('../models/user.model');
 const Follow = require('../models/follow.model');
+const NotificationService = require('../services/notification.service');
 
 const saveFollow = async (req, res) => {
     const params = req.body;
     const follow = new Follow(params);
     follow.user = req.user.sub;
     follow.followed = params.followed;
+    
     try {
         const existingFollow = await Follow.find({ user: follow.user, followed: follow.followed });
         if (existingFollow && existingFollow.length >= 1) {
             return res.status(200).send({ message: 'Follow already exists' });
         } else {
             const followStored = await follow.save();
+            
+            // Crear notificación de nuevo seguidor
+            await NotificationService.createFollowNotification(
+                req.user,
+                follow.followed
+            ).catch(err => console.error('Error creating follow notification:', err));
+            
             return res.status(200).send({ follow: followStored });
         }
     } catch (err) {

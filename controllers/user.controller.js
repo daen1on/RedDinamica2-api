@@ -94,6 +94,22 @@ const saveUser = async (req, res) => {
                      </p>
                     `
                 );
+                
+                // Notificar a los administradores sobre el nuevo usuario
+                try {
+                    const adminUsers = await User.find({ role: { $in: ['admin', 'delegated_admin'] } }, '_id');
+                    const adminIds = adminUsers.map(admin => admin._id);
+                    
+                    if (adminIds.length > 0) {
+                        const NotificationService = require('../services/notification.service');
+                        await NotificationService.createNewUserRegistrationNotification(userStored, adminIds);
+                        console.log(`New user registration notification sent to ${adminIds.length} administrators`);
+                    }
+                } catch (notificationErr) {
+                    console.error('Error creating new user registration notification:', notificationErr);
+                    // No fallar la creación del usuario por un error de notificación
+                }
+                
                 delete userStored.password;
                 return res.status(200).send({ user: userStored });
             }
@@ -242,7 +258,7 @@ const recoverPassword = async (req, res) => {
         const token = crypto.randomBytes(32).toString('hex');
         const expires = new Date(Date.now() + 3600000); // El token expira en 1 hora
         const resetPasswordUrl = process.env.NODE_ENV === 'production'
-        ? process.env.RESET_PASSWORD_URL_PROD
+        ? process.env.URL
         : process.env.RESET_PASSWORD_URL_DEV;
         user.resetPasswordToken = token;
         user.resetPasswordExpires = expires;
@@ -357,6 +373,9 @@ const updateUser = async (req, res) => {
     }
 
     try {
+        // Obtener el usuario antes de actualizarlo para comparar el estado
+        const userBefore = await User.findById(userId);
+        
         const userUpdated = await User.findByIdAndUpdate(userId, update, { new: true })
             .populate('city')
             .populate('profession')
@@ -364,6 +383,25 @@ const updateUser = async (req, res) => {
         if (!userUpdated) {
             return res.status(404).send({ message: 'The user can not be updated' });
         }
+        
+        // Si un admin está actualizando a otro usuario, invalidar sus tokens
+        if (userId != req.user.sub && ['admin', 'delegated_admin'].includes(req.user.role)) {
+            const TokenInvalidationService = require('../services/token-invalidation.service');
+            TokenInvalidationService.markUserAsUpdated(userId);
+            console.log(`Admin ${req.user.sub} updated user ${userId}. Tokens invalidated.`);
+            
+            // Si el usuario fue aprobado (cambió de actived: false a actived: true)
+            if (!userBefore.actived && userUpdated.actived) {
+                const NotificationService = require('../services/notification.service');
+                try {
+                    await NotificationService.createUserApprovedNotification(userId, req.user.sub);
+                    console.log(`User approval notification sent to user ${userId}`);
+                } catch (notificationErr) {
+                    console.error('Error creating user approval notification:', notificationErr);
+                }
+            }
+        }
+        
         userUpdated.password = null;
         return res.status(200).send({ user: userUpdated });
     } catch (err) {
@@ -442,9 +480,10 @@ const getProfilePic = async (req, res) => {
         return res.sendFile(pathFile);
     } catch (err) {
         if (err.code === 'ENOENT') {
-            return res.status(200).send({ message: 'The image does not exits' });
+            // Send 404 if file does not exist
+            return res.status(404).send({ message: 'The image does not exist.' });
         } else {
-            // en caso de otro error
+            console.error('Error requesting profile picture:', err); // Log other errors
             return res.status(500).send({ message: 'Error requesting the image.' });
         }
     }
@@ -564,6 +603,44 @@ const getCountFollow = async (userId) => {
     }
 }
 
+const forceUserLogout = async (req, res) => {
+    const userId = req.params.id;
+    
+    // Solo admins pueden forzar logout de otros usuarios
+    if (!['admin', 'delegated_admin'].includes(req.user.role)) {
+        return res.status(401).send({ message: 'You do not have permission to logout other users' });
+    }
+    
+    try {
+        const TokenInvalidationService = require('../services/token-invalidation.service');
+        TokenInvalidationService.markUserAsUpdated(userId);
+        
+        console.log(`Admin ${req.user.sub} forced logout for user ${userId}`);
+        return res.status(200).send({ 
+            message: 'User has been logged out successfully',
+            userId: userId
+        });
+    } catch (err) {
+        return res.status(500).send({ message: 'Error forcing user logout' });
+    }
+}
+
+const getTokenStats = async (req, res) => {
+    // Solo admins pueden ver estadísticas de tokens
+    if (!['admin', 'delegated_admin'].includes(req.user.role)) {
+        return res.status(401).send({ message: 'You do not have permission to view token statistics' });
+    }
+    
+    try {
+        const TokenInvalidationService = require('../services/token-invalidation.service');
+        const stats = TokenInvalidationService.getStats();
+        
+        return res.status(200).send(stats);
+    } catch (err) {
+        return res.status(500).send({ message: 'Error getting token statistics' });
+    }
+}
+
 module.exports = {
     saveUser,
     saveUserByAdmin,
@@ -580,6 +657,8 @@ module.exports = {
     deleteUser,
     uploadProfilePic,
     getProfilePic,
-    resetPassword
+    resetPassword,
+    forceUserLogout,
+    getTokenStats
 
 }

@@ -11,6 +11,7 @@ let path = require('path');
 // Load models
 let Resource = require('../models/resource.model');
 let Comment = require('../models/comment.model');
+const NotificationService = require('../services/notification.service');
 
 
 const saveResource = async (req, res) => {
@@ -86,13 +87,111 @@ const deleteResource = async (req, res) => {
 const updateResource = async (req, res) => {
     const resourceId = req.params.id;
     const updateData = req.body;
+    
     try {
-        const resourceUpdated = await Resource.findByIdAndUpdate(resourceId, updateData, {new:true});
+        // Obtener el recurso actual para comparar estados
+        const currentResource = await Resource.findById(resourceId).populate('author');
+        if (!currentResource) {
+            return res.status(404).send({ message: 'Resource not found' });
+        }
+
+        const resourceUpdated = await Resource.findByIdAndUpdate(resourceId, updateData, {new:true}).populate('author');
+        
+        // Verificar si cambió el estado de aceptación
+        if (updateData.hasOwnProperty('accepted') && currentResource.accepted !== updateData.accepted) {
+            if (updateData.accepted === true) {
+                // Recurso aprobado
+                await NotificationService.createResourceApprovedNotification(
+                    currentResource.author._id,
+                    resourceId,
+                    currentResource.name,
+                    req.user.sub
+                ).catch(err => console.error('Error creating resource approved notification:', err));
+            } else if (updateData.accepted === false) {
+                // Recurso rechazado
+                await NotificationService.createResourceRejectedNotification(
+                    currentResource.author._id,
+                    resourceId,
+                    currentResource.name,
+                    req.user.sub,
+                    updateData.rejectionReason || ''
+                ).catch(err => console.error('Error creating resource rejected notification:', err));
+            }
+        }
+        
         return res.status(200).send({ resource: resourceUpdated });
     } catch (err) {
+        console.error('Error updating resource:', err);
         return res.status(500).send({ message: 'Error in the request. The resource can not be updated' });
     }
 };
+
+// Función específica para aprobar recurso
+const approveResource = async (req, res) => {
+    const resourceId = req.params.id;
+    
+    try {
+        const resource = await Resource.findById(resourceId).populate('author');
+        if (!resource) {
+            return res.status(404).send({ message: 'Resource not found' });
+        }
+
+        resource.accepted = true;
+        resource.visible = true; // También hacer visible cuando se aprueba
+        const resourceUpdated = await resource.save();
+        
+        // Crear notificación de aprobación
+        await NotificationService.createResourceApprovedNotification(
+            resource.author._id,
+            resourceId,
+            resource.name,
+            req.user.sub
+        ).catch(err => console.error('Error creating resource approved notification:', err));
+        
+        return res.status(200).send({ 
+            resource: resourceUpdated,
+            message: 'Resource approved successfully'
+        });
+    } catch (err) {
+        console.error('Error approving resource:', err);
+        return res.status(500).send({ message: 'Error approving resource' });
+    }
+};
+
+// Función específica para rechazar recurso
+const rejectResource = async (req, res) => {
+    const resourceId = req.params.id;
+    const { reason } = req.body;
+    
+    try {
+        const resource = await Resource.findById(resourceId).populate('author');
+        if (!resource) {
+            return res.status(404).send({ message: 'Resource not found' });
+        }
+
+        resource.accepted = false;
+        resource.visible = false;
+        const resourceUpdated = await resource.save();
+        
+        // Crear notificación de rechazo
+        await NotificationService.createResourceRejectedNotification(
+            resource.author._id,
+            resourceId,
+            resource.name,
+            req.user.sub,
+            reason || ''
+        ).catch(err => console.error('Error creating resource rejected notification:', err));
+        
+        return res.status(200).send({ 
+            resource: resourceUpdated,
+            message: 'Resource rejected successfully'
+        });
+    } catch (err) {
+        console.error('Error rejecting resource:', err);
+        return res.status(500).send({ message: 'Error rejecting resource' });
+    }
+};
+
 const getResources = async (req, res) => {
     const page = req.params.page || 1;
     let findQuery = {
@@ -181,7 +280,9 @@ module.exports = {
     updateResource,
     getResources,
     getAllResources,
-    getSuggestResources
+    getSuggestResources,
+    approveResource,
+    rejectResource
 }
 
 

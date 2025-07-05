@@ -9,6 +9,7 @@ const mail = require('../services/mail.service');
 const fs = require('fs').promises; // Use promise-based version of fs
 const path = require('path');
 const { ITEMS_PER_PAGE } = require('../config');
+const NotificationService = require('../services/notification.service');
 
 // Simplify error handling with a middleware-like approach
 const handleError = (res, message = 'Request failed', statusCode = 500) => {
@@ -133,28 +134,27 @@ const getLesson = async (req, res) => {
     }
 };
 const getLessons = async (req, res) => {
-    const { page = 1, limit = 10 } = req.query;
-    const { visibleOnes } = req.params; // Get visibleOnes from params
-    const skip = (page - 1) * limit;
+    const { visibleOnes, page = 1 } = req.params;
+    const accepted = visibleOnes === 'true'; // Convertir string a boolean
+    const limit = ITEMS_PER_PAGE;
+    const skip = (parseInt(page) - 1) * limit;
     
-    // Determine the value of 'accepted' based on 'visibleOnes'
-    const acceptedValue = visibleOnes === 'true'; // Assuming 'true' string for true, anything else for false
-
-    console.log('visibleOnes (from params):', visibleOnes, 'accepted:', acceptedValue);
+    console.log('getLessons - visibleOnes:', visibleOnes, 'accepted:', accepted, 'page:', page);
 
     try {
-        const lessons = await Lesson.find({ accepted: acceptedValue }) // Use the boolean value here
+        const lessons = await Lesson.find({ accepted })
             .skip(skip)
             .limit(limit)
             .populate(populateLesson());
 
-        const total = await Lesson.countDocuments({ accepted: acceptedValue }); // Match the count with the find query
+        const total = await Lesson.countDocuments({ accepted });
         console.log("Total lessons found:", total);
 
         return res.status(200).send({
             lessons,
             total,
-            pages: Math.ceil(total / limit)
+            pages: Math.ceil(total / limit),
+            currentPage: parseInt(page)
         });
     } catch (err) {
         console.error("Error getting lessons:", err);
@@ -166,14 +166,20 @@ const getLessons = async (req, res) => {
 
 
 const getAllLessons = async (req, res) => {
-    const order = req.query.order ? { [req.query.order]: -1 } : { created_at: -1 };
+    const { visibleOnes, order } = req.params;
+    const accepted = visibleOnes === 'true'; // Convertir string a boolean
+    const sortOrder = order ? { [order]: -1 } : { created_at: -1 };
+    
+    console.log("getAllLessons - visibleOnes:", visibleOnes, "accepted:", accepted, "order:", order);
+    
     try {
-        const lessons = await Lesson.find({}).sort(order);
-        const total = await Lesson.countDocuments({});
+        const lessons = await Lesson.find({ accepted }).sort(sortOrder).populate(populateLesson());
+        const total = await Lesson.countDocuments({ accepted });
         console.log("Total lessons found:", total);
         console.log("entered get all lessons", lessons.length);
         res.status(200).send({ lessons, total, pages: Math.ceil(total / ITEMS_PER_PAGE) });
     } catch (err) {
+        console.error("Error in getAllLessons:", err);
         handleError(res);
     }
 };
@@ -282,8 +288,174 @@ function populateLesson() {
     ];
 }
 
+// ===== NUEVAS FUNCIONES PARA NOTIFICACIONES =====
 
+// Añadir mensaje a conversación de lección
+const addLessonMessage = async (req, res) => {
+    const { id: lessonId } = req.params;
+    const { text, conversationTitle, file } = req.body;
 
+    try {
+        const lesson = await Lesson.findById(lessonId).populate('author leader expert development_group');
+        if (!lesson) {
+            return handleError(res, 'Lesson not found', 404);
+        }
+
+        // Crear el nuevo mensaje
+        const newMessage = {
+            text,
+            author: req.user.sub,
+            conversationTitle: conversationTitle || 'General',
+            created_at: new Date(),
+            file: file || null
+        };
+
+        // Añadir mensaje a la lección
+        lesson.conversations.push(newMessage);
+        const updatedLesson = await lesson.save();
+
+        // Obtener todos los participantes de la lección
+        const participants = new Set();
+        if (lesson.author) participants.add(lesson.author._id.toString());
+        if (lesson.leader) participants.add(lesson.leader._id.toString());
+        if (lesson.expert) participants.add(lesson.expert._id.toString());
+        if (lesson.development_group) {
+            lesson.development_group.forEach(member => participants.add(member._id.toString()));
+        }
+
+        // Convertir a array y filtrar al usuario actual
+        const participantIds = Array.from(participants).filter(id => id !== req.user.sub.toString());
+
+        // Crear notificaciones
+        if (participantIds.length > 0) {
+            await NotificationService.createLessonMessageNotification(
+                req.user,
+                participantIds,
+                lesson._id,
+                lesson.title,
+                text
+            ).catch(err => console.error('Error creating lesson message notification:', err));
+        }
+
+        return res.status(200).send({ lesson: updatedLesson });
+    } catch (err) {
+        console.error('Error adding lesson message:', err);
+        return handleError(res, 'Error adding message to lesson');
+    }
+};
+
+// Cambiar estado de lección
+const changeLessonState = async (req, res) => {
+    const { id: lessonId } = req.params;
+    const { state, reason } = req.body;
+
+    try {
+        const lesson = await Lesson.findById(lessonId).populate('author leader expert development_group');
+        if (!lesson) {
+            return handleError(res, 'Lesson not found', 404);
+        }
+
+        const oldState = lesson.state;
+        lesson.state = state;
+        
+        const updatedLesson = await lesson.save();
+
+        // Obtener todos los participantes de la lección
+        const participants = new Set();
+        if (lesson.author) participants.add(lesson.author._id.toString());
+        if (lesson.leader) participants.add(lesson.leader._id.toString());
+        if (lesson.expert) participants.add(lesson.expert._id.toString());
+        if (lesson.development_group) {
+            lesson.development_group.forEach(member => participants.add(member._id.toString()));
+        }
+
+        const participantIds = Array.from(participants);
+
+        // Crear notificaciones de cambio de estado
+        if (participantIds.length > 0 && oldState !== state) {
+            await NotificationService.createLessonStateChangeNotification(
+                participantIds,
+                lesson._id,
+                lesson.title,
+                oldState,
+                state,
+                req.user.sub
+            ).catch(err => console.error('Error creating lesson state change notification:', err));
+        }
+
+        return res.status(200).send({ lesson: updatedLesson });
+    } catch (err) {
+        console.error('Error changing lesson state:', err);
+        return handleError(res, 'Error changing lesson state');
+    }
+};
+
+// Crear convocatoria
+const createCall = async (req, res) => {
+    const { id: lessonId } = req.params;
+    const { text, visible = true } = req.body;
+
+    try {
+        const lesson = await Lesson.findById(lessonId).populate('author');
+        if (!lesson) {
+            return handleError(res, 'Lesson not found', 404);
+        }
+
+        // Actualizar la convocatoria
+        lesson.call = {
+            text,
+            visible,
+            author: req.user.sub,
+            interested: lesson.call?.interested || [],
+            created_at: new Date()
+        };
+
+        const updatedLesson = await lesson.save();
+
+        // Si la convocatoria es visible, notificar a usuarios interesados
+        if (visible && lesson.call?.interested?.length > 0) {
+            await NotificationService.createCallNotification(
+                req.user,
+                lesson.call.interested,
+                lesson._id,
+                lesson.title,
+                text
+            ).catch(err => console.error('Error creating call notification:', err));
+        }
+
+        return res.status(200).send({ lesson: updatedLesson });
+    } catch (err) {
+        console.error('Error creating call:', err);
+        return handleError(res, 'Error creating call');
+    }
+};
+
+// Mostrar interés en convocatoria
+const showInterestInCall = async (req, res) => {
+    const { id: lessonId } = req.params;
+
+    try {
+        const lesson = await Lesson.findById(lessonId);
+        if (!lesson) {
+            return handleError(res, 'Lesson not found', 404);
+        }
+
+        if (!lesson.call) {
+            return handleError(res, 'No call available for this lesson', 400);
+        }
+
+        // Añadir usuario a la lista de interesados si no está ya
+        if (!lesson.call.interested.includes(req.user.sub)) {
+            lesson.call.interested.push(req.user.sub);
+            await lesson.save();
+        }
+
+        return res.status(200).send({ message: 'Interest registered successfully' });
+    } catch (err) {
+        console.error('Error showing interest in call:', err);
+        return handleError(res, 'Error registering interest');
+    }
+};
 
 module.exports = {
     saveLesson,
@@ -301,7 +473,12 @@ module.exports = {
     getAllCalls,
     getExperiences,
     uploadLessonFiles,
-    getLessonFile
+    getLessonFile,
+    // Nuevas funciones
+    addLessonMessage,
+    changeLessonState,
+    createCall,
+    showInterestInCall
 }
 
 

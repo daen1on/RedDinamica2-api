@@ -21,4 +21,8 @@ api.post('/upload-file-post/:id', [auth.ensureAuth, uploadMiddleware.uploadImage
 api.get('/get-image-post/:file', publicationController.getPublicacionFile);
 api.put('/publication-comment/:id', auth.ensureAuth, publicationController.updatePublicationComments);
 
+// Rutas para likes en publicaciones
+api.post('/publication-like/:id', auth.ensureAuth, publicationController.toggleLikePublication);
+api.get('/publication-likes/:id', auth.ensureAuth, publicationController.getPublicationLikes);
+
 module.exports = api;

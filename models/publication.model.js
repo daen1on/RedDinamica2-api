@@ -10,7 +10,9 @@ var publicationSchema = schema({
     user:{type: schema.ObjectId, ref: 'User'},
     created_at:String,
     comments:[{type: schema.ObjectId, ref: 'Comment'}],
-    file:String
+    file:String,
+    likes:[{type: schema.ObjectId, ref: 'User'}],
+    likesCount:{type: Number, default: 0}
 });
 
 // Apply the pagination plugin to the publication schema

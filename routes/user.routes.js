@@ -31,5 +31,7 @@ api.get('/counters/:id?', auth.ensureAuth , userController.getCounters);
 
 api.post('/upload-image-user/:id', [auth.ensureAuth, uploadMiddleware.uploadImage(USERS_PATH)] , userController.uploadProfilePic);
 api.get('/get-image-user/:imageFile', userController.getProfilePic);
+api.post('/force-logout/:id', [auth.ensureAuth, controlAccess.isAdmin], userController.forceUserLogout);
+api.get('/token-stats', [auth.ensureAuth, controlAccess.isAdmin], userController.getTokenStats);
 
 module.exports = api;

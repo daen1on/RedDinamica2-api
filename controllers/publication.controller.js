@@ -42,11 +42,21 @@ const getPublications = async (req, res) => {
             populate: [
                 { 
                     path: 'comments', 
-                    populate: { path: 'user', select: 'name surname picture _id' } 
+                    populate: [
+                        { path: 'user', select: 'name surname picture _id' },
+                        { 
+                            path: 'replies', 
+                            populate: { path: 'user', select: 'name surname picture _id' }
+                        }
+                    ]
                 },
                 { 
                     path: 'user', 
                     select: 'name surname picture _id' 
+                },
+                {
+                    path: 'likes',
+                    select: 'name surname picture _id'
                 }
             ]
         };
@@ -77,10 +87,22 @@ const getUserPublications = async (req, res) => {
             page: page,
             limit: ITEMS_PER_PAGE, 
             sort: { created_at: -1 },
-            populate: {
-                path: 'comments',
-                populate: { path: 'user', select: 'name surname picture _id' }
-            }
+            populate: [
+                {
+                    path: 'comments',
+                    populate: [
+                        { path: 'user', select: 'name surname picture _id' },
+                        { 
+                            path: 'replies', 
+                            populate: { path: 'user', select: 'name surname picture _id' }
+                        }
+                    ]
+                },
+                {
+                    path: 'likes',
+                    select: 'name surname picture _id'
+                }
+            ]
         };
 
         // Using paginate method
@@ -179,12 +201,15 @@ const getPublicacionFile = async (req, res) => {
     const pathFile = path.resolve(POST_PATH, file);
 
     try {
-        fs.statSync(pathFile);
+        // Use asynchronous file access check
+        await require('fs').promises.access(pathFile, require('fs').constants.F_OK);
         return res.sendFile(pathFile);
     } catch (err) {
         if (err.code === 'ENOENT') {
-            return res.status(200).send({ message: 'The image does not exits' });
+            // Send 404 if file does not exist
+            return res.status(404).send({ message: 'The image does not exist.' });
         } else {
+            console.error('Error requesting publication file:', err); // Log other errors
             return res.status(500).send({ message: 'Error requesting the image.' });
         }
     }
@@ -197,6 +222,72 @@ const removeFilesOfUpdates = async (res, httpCode, filePath, message) => {
         return res.status(httpCode).send({ message: message });
     }
 };
+
+// Métodos para likes en publicaciones
+const toggleLikePublication = async (req, res) => {
+    const publicationId = req.params.id;
+    const userId = req.user.sub;
+
+    try {
+        const publication = await Publication.findById(publicationId);
+        
+        if (!publication) {
+            return res.status(404).send({ message: 'Publication not found' });
+        }
+
+        // Verificar si el usuario ya dio like
+        const hasLiked = publication.likes && publication.likes.includes(userId);
+        
+        let action;
+        if (hasLiked) {
+            // Quitar like
+            publication.likes = publication.likes.filter(id => id.toString() !== userId.toString());
+            action = 'unliked';
+        } else {
+            // Agregar like
+            if (!publication.likes) publication.likes = [];
+            publication.likes.push(userId);
+            action = 'liked';
+        }
+
+        // Actualizar contador
+        publication.likesCount = publication.likes.length;
+        
+        const updatedPublication = await publication.save();
+        
+        return res.status(200).send({ 
+            message: `Publication ${action} successfully`,
+            action: action,
+            likesCount: updatedPublication.likesCount,
+            publication: updatedPublication
+        });
+    } catch (err) {
+        console.error('Error toggling publication like:', err);
+        return res.status(500).send({ message: 'Error in the request. Could not toggle like' });
+    }
+};
+
+const getPublicationLikes = async (req, res) => {
+    const publicationId = req.params.id;
+
+    try {
+        const publication = await Publication.findById(publicationId)
+            .populate('likes', 'name surname picture _id');
+        
+        if (!publication) {
+            return res.status(404).send({ message: 'Publication not found' });
+        }
+
+        return res.status(200).send({ 
+            likes: publication.likes || [],
+            likesCount: publication.likesCount || 0
+        });
+    } catch (err) {
+        console.error('Error getting publication likes:', err);
+        return res.status(500).send({ message: 'Error in the request. Could not get likes' });
+    }
+};
+
 module.exports = {
     getUserPublications,
     savePublication,
@@ -206,5 +297,7 @@ module.exports = {
     updatePublication,
     updatePublicationComments,
     uploadPublicationFile,
-    getPublicacionFile
+    getPublicacionFile,
+    toggleLikePublication,
+    getPublicationLikes
 };

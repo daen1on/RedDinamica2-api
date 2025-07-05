@@ -88,14 +88,24 @@ app.use((req, res, next) => {
 var cors = require('cors');
 var corsOptions = {
   origin: function (origin, callback) {
-    if (!origin || ['http://localhost:3800','http://localhost:4200', 'https://localhost:4200'].indexOf(origin) !== -1) {
+    // Permitir requests sin origin (como Postman) y los orígenes específicos
+    const allowedOrigins = [
+      'http://localhost:3800',
+      'http://localhost:4200', 
+      'https://localhost:4200',
+      'https://simon.uis.edu.co'
+    ];
+    
+    if (!origin || allowedOrigins.indexOf(origin) !== -1) {
       callback(null, true);
     } else {
+      console.log('CORS blocked origin:', origin);
       callback(new Error('Not allowed by CORS'));
     }
   },
-  methods: 'GET,POST,PUT,DELETE,PATCH,OPTIONS',
-  allowedHeaders: ['Content-Type', 'Authorization'],
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
+  credentials: true, // Permitir cookies y headers de autenticación
   optionsSuccessStatus: 204, // some legacy browsers (IE11, various SmartTVs) choke on 204
 };
 
@@ -125,8 +135,19 @@ let notificationRoutes = require('./routes/notification.routes');
 app.use(express.urlencoded({ extended: false })); //Parse URL-encoded bodies
 app.use(express.json({limit:"20000kb"})); 
 
+// Middleware para manejar preflight requests
+app.use((req, res, next) => {
+  if (req.method === 'OPTIONS') {
+    res.header('Access-Control-Allow-Origin', req.headers.origin || '*');
+    res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, PATCH, OPTIONS');
+    res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With');
+    res.header('Access-Control-Allow-Credentials', 'true');
+    return res.status(204).end();
+  }
+  next();
+});
+
 // Cors
-//app.use(cors(corsOptions));
 app.use(cors(corsOptions));
 // x-frame option
 // ...

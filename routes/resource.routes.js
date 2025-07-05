@@ -30,5 +30,12 @@ api.get('/all-resources/:visibleOnes/:order?', auth.ensureAuth, resourceControll
 
 api.get('/suggest-resources/:page?', auth.ensureAuth, resourceController.getSuggestResources);
 
+// ===== NUEVAS RUTAS PARA NOTIFICACIONES =====
+
+// Aprobar recurso
+api.put('/resource/:id/approve', [auth.ensureAuth, controlAccess.isAdmin], resourceController.approveResource);
+
+// Rechazar recurso
+api.put('/resource/:id/reject', [auth.ensureAuth, controlAccess.isAdmin], resourceController.rejectResource);
 
 module.exports = api;

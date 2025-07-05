@@ -34,4 +34,18 @@ api.get('/experiences/:page?', auth.ensureAuth, lessonController.getExperiences)
 api.get('/calls/:page?', lessonController.getCalls);
 api.get('/all-calls', lessonController.getCalls);
 
+// ===== NUEVAS RUTAS PARA NOTIFICACIONES =====
+
+// Añadir mensaje a conversación de lección
+api.post('/lesson/:id/message', auth.ensureAuth, lessonController.addLessonMessage);
+
+// Cambiar estado de lección
+api.put('/lesson/:id/state', auth.ensureAuth, lessonController.changeLessonState);
+
+// Crear convocatoria
+api.post('/lesson/:id/call', auth.ensureAuth, lessonController.createCall);
+
+// Mostrar interés en convocatoria
+api.post('/lesson/:id/call/interest', auth.ensureAuth, lessonController.showInterestInCall);
+
 module.exports = api;
