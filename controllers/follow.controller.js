@@ -17,9 +17,12 @@ const saveFollow = async (req, res) => {
         } else {
             const followStored = await follow.save();
             
+            // Obtener datos completos del usuario para la notificación
+            const userData = await User.findById(req.user.sub);
+            
             // Crear notificación de nuevo seguidor
             await NotificationService.createFollowNotification(
-                req.user,
+                userData, // Usar datos completos del usuario
                 follow.followed
             ).catch(err => console.error('Error creating follow notification:', err));
             

@@ -10,7 +10,7 @@ class NotificationService {
             user: toUser,
             type: 'message',
             title: 'Nuevo mensaje',
-            content: `${fromUser.name} ${fromUser.lastname} te ha enviado un mensaje`,
+            content: `${fromUser.name} ${fromUser.surname} te ha enviado un mensaje`,
             link: `/messages/${messageId}`,
             relatedId: messageId,
             relatedModel: 'Message',
@@ -27,7 +27,7 @@ class NotificationService {
             user: publicationOwner,
             type: 'comment',
             title: 'Nuevo comentario en tu publicación',
-            content: `${fromUser.name} ${fromUser.lastname} comentó: "${commentText.substring(0, 50)}${commentText.length > 50 ? '...' : ''}"`,
+            content: `${fromUser.name} ${fromUser.surname} comentó: "${commentText.substring(0, 50)}${commentText.length > 50 ? '...' : ''}"`,
             link: `/publications/${publicationId}`,
             relatedId: publicationId,
             relatedModel: 'Publication',
@@ -41,7 +41,7 @@ class NotificationService {
         const notificationData = {
             type: 'lesson',
             title: 'Nuevo mensaje en lección',
-            content: `${fromUser.name} ${fromUser.lastname} escribió en "${lessonTitle}": "${messageText.substring(0, 50)}${messageText.length > 50 ? '...' : ''}"`,
+            content: `${fromUser.name} ${fromUser.surname} escribió en "${lessonTitle}": "${messageText.substring(0, 50)}${messageText.length > 50 ? '...' : ''}"`,
             link: `/lessons/${lessonId}`,
             relatedId: lessonId,
             relatedModel: 'Lesson',
@@ -63,28 +63,25 @@ class NotificationService {
     }
 
     // 3. Notificación de cambio de estado en lección
-    static async createLessonStateChangeNotification(lessonParticipants, lessonId, lessonTitle, oldState, newState, changedBy) {
-        const stateMessages = {
-            'pending': 'pendiente de revisión',
-            'in_progress': 'en progreso',
-            'completed': 'completada',
-            'cancelled': 'cancelada',
-            'approved': 'aprobada',
-            'rejected': 'rechazada'
-        };
-
+    static async createLessonStateChangeNotification(fromUser, lessonParticipants, lessonId, lessonTitle, oldState, newState, reason = '') {
+        const reasonText = reason ? ` Motivo: ${reason}` : '';
         const notificationData = {
             type: 'lesson',
             title: 'Cambio de estado en lección',
-            content: `La lección "${lessonTitle}" cambió de ${stateMessages[oldState] || oldState} a ${stateMessages[newState] || newState}`,
+            content: `${fromUser.name} ${fromUser.surname} cambió el estado de "${lessonTitle}" de ${oldState} a ${newState}.${reasonText}`,
             link: `/lessons/${lessonId}`,
             relatedId: lessonId,
             relatedModel: 'Lesson',
-            from: changedBy,
+            from: fromUser._id,
             priority: 'high'
         };
 
-        const notifications = lessonParticipants.map(userId => ({
+        // Notificar a todos los participantes excepto al que cambió el estado
+        const participantsToNotify = lessonParticipants.filter(userId => 
+            userId.toString() !== fromUser._id.toString()
+        );
+
+        const notifications = participantsToNotify.map(userId => ({
             user: userId,
             ...notificationData
         }));
@@ -92,13 +89,13 @@ class NotificationService {
         return await Notification.insertMany(notifications);
     }
 
-    // 4. Notificación de nuevo seguidor (mejorada)
+    // 4. Notificación de nuevo seguidor (CORREGIDA)
     static async createFollowNotification(fromUser, toUser) {
         return await Notification.createNotification({
             user: toUser,
             type: 'follow',
             title: 'Nuevo seguidor',
-            content: `${fromUser.name} ${fromUser.lastname} ha comenzado a seguirte`,
+            content: `${fromUser.name} ${fromUser.surname} ha comenzado a seguirte`,
             link: `/profile/${fromUser._id}`,
             relatedId: fromUser._id,
             relatedModel: 'User',
@@ -112,7 +109,7 @@ class NotificationService {
         const notificationData = {
             type: 'lesson',
             title: 'Nueva convocatoria disponible',
-            content: `${fromUser.name} ${fromUser.lastname} ha creado una convocatoria para "${lessonTitle}": "${callText.substring(0, 100)}${callText.length > 100 ? '...' : ''}"`,
+            content: `${fromUser.name} ${fromUser.surname} ha creado una convocatoria para "${lessonTitle}": "${callText.substring(0, 100)}${callText.length > 100 ? '...' : ''}"`,
             link: `/lessons/${lessonId}`,
             relatedId: lessonId,
             relatedModel: 'Lesson',
@@ -201,7 +198,7 @@ class NotificationService {
         const notificationData = {
             type: 'lesson',
             title: 'Nueva lección disponible',
-            content: `${fromUser.name} ${fromUser.lastname} ha creado una nueva lección: "${lessonTitle}"`,
+            content: `${fromUser.name} ${fromUser.surname} ha creado una nueva lección: "${lessonTitle}"`,
             link: `/lessons/${lessonId}`,
             relatedId: lessonId,
             relatedModel: 'Lesson',
@@ -222,7 +219,7 @@ class NotificationService {
         const notificationData = {
             type: 'publication',
             title: 'Nueva publicación',
-            content: `${fromUser.name} ${fromUser.lastname} ha creado una nueva publicación: "${publicationTitle}"`,
+            content: `${fromUser.name} ${fromUser.surname} ha creado una nueva publicación: "${publicationTitle}"`,
             link: `/publications/${publicationId}`,
             relatedId: publicationId,
             relatedModel: 'Publication',
@@ -244,7 +241,7 @@ class NotificationService {
             user: toUser,
             type: 'comment',
             title: 'Nuevo comentario en tu recurso',
-            content: `${fromUser.name} ${fromUser.lastname} comentó en "${resourceTitle}"`,
+            content: `${fromUser.name} ${fromUser.surname} comentó en "${resourceTitle}"`,
             link: `/resources/${commentId}`,
             relatedId: commentId,
             relatedModel: 'Comment',
@@ -254,12 +251,12 @@ class NotificationService {
     }
 
     // Crear notificación de respuesta a comentario
-    static async createReplyNotification(fromUser, toUser, commentId, replyText) {
+    static async createCommentReplyNotification(fromUser, toUser, commentId, replyText) {
         return await Notification.createNotification({
             user: toUser,
             type: 'comment',
             title: 'Nueva respuesta a tu comentario',
-            content: `${fromUser.name} ${fromUser.lastname} respondió a tu comentario: "${replyText.substring(0, 50)}${replyText.length > 50 ? '...' : ''}"`,
+            content: `${fromUser.name} ${fromUser.surname} respondió a tu comentario: "${replyText.substring(0, 50)}${replyText.length > 50 ? '...' : ''}"`,
             link: `/comments/${commentId}`,
             relatedId: commentId,
             relatedModel: 'Comment',
@@ -273,7 +270,7 @@ class NotificationService {
         const notificationData = {
             type: 'resource',
             title: 'Nuevo recurso disponible',
-            content: `${fromUser.name} ${fromUser.lastname} ha compartido un nuevo recurso: "${resourceTitle}"`,
+            content: `${fromUser.name} ${fromUser.surname} ha compartido un nuevo recurso: "${resourceTitle}"`,
             link: `/resources/${resourceId}`,
             relatedId: resourceId,
             relatedModel: 'Resource',
