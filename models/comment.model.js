@@ -12,7 +12,8 @@ var commentSchema = schema({
     likesCount:{type: Number, default: 0},
     replies:[{type: schema.ObjectId, ref: 'Comment'}],
     parentId:{type: schema.ObjectId, ref: 'Comment', default: null},
-    publication:{type: schema.ObjectId, ref: 'Publication'}
+    publication:{type: schema.ObjectId, ref: 'Publication'},
+    mentionedUser:{type: schema.ObjectId, ref: 'User', default: null}
 });
 
 module.exports = mongoose.model('Comment', commentSchema);

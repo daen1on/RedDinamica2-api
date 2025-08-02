@@ -28,7 +28,7 @@ class NotificationService {
             type: 'comment',
             title: 'Nuevo comentario en tu publicación',
             content: `${fromUser.name} ${fromUser.surname} comentó: "${commentText.substring(0, 50)}${commentText.length > 50 ? '...' : ''}"`,
-            link: `/publications/${publicationId}`,
+            link: `/inicio/publicacion/${publicationId}?highlight=comment`,
             relatedId: publicationId,
             relatedModel: 'Publication',
             from: fromUser._id,
@@ -250,19 +250,40 @@ class NotificationService {
         });
     }
 
-    // Crear notificación de respuesta a comentario
-    static async createCommentReplyNotification(fromUser, toUser, commentId, replyText) {
-        return await Notification.createNotification({
-            user: toUser,
+    // Crear notificación de mención en comentario/respuesta
+    static async createMentionNotification(fromUser, mentionedUserId, publicationId, commentText, isReply = false) {
+        const contentType = isReply ? 'una respuesta' : 'un comentario';
+        
+        const notificationData = {
+            user: mentionedUserId,
             type: 'comment',
-            title: 'Nueva respuesta a tu comentario',
-            content: `${fromUser.name} ${fromUser.surname} respondió a tu comentario: "${replyText.substring(0, 50)}${replyText.length > 50 ? '...' : ''}"`,
-            link: `/comments/${commentId}`,
-            relatedId: commentId,
-            relatedModel: 'Comment',
+            title: `Te mencionaron en un ${contentType}`,
+            content: `${fromUser.name} ${fromUser.surname} te mencionó en ${contentType}: "${commentText.substring(0, 100)}${commentText.length > 100 ? '...' : ''}"`,
+            link: `/inicio/publicacion/${publicationId}?highlight=comment`,
+            relatedId: publicationId,
+            relatedModel: 'Publication',
             from: fromUser._id,
             priority: 'medium'
-        });
+        };
+
+        return await Notification.createNotification(notificationData);
+    }
+
+    // Crear notificación de respuesta a comentario
+    static async createReplyNotification(fromUser, commentOwnerId, publicationId, replyText) {
+        const notificationData = {
+            user: commentOwnerId,
+            type: 'comment',
+            title: 'Nueva respuesta a tu comentario',
+            content: `${fromUser.name} ${fromUser.surname} respondió a tu comentario: "${replyText.substring(0, 100)}${replyText.length > 100 ? '...' : ''}"`,
+            link: `/inicio/publicacion/${publicationId}?highlight=comment`,
+            relatedId: publicationId,
+            relatedModel: 'Publication',
+            from: fromUser._id,
+            priority: 'medium'
+        };
+
+        return await Notification.createNotification(notificationData);
     }
 
     // Crear notificación de nuevo recurso
@@ -302,6 +323,13 @@ class NotificationService {
         }));
 
         return await Notification.insertMany(notifications);
+    }
+
+    // Crear notificación de mención en comentario/respuesta (DEPRECATED - Método duplicado)
+    // Este método está duplicado y debería ser eliminado en futuras versiones
+    static async createMentionNotificationOld(fromUser, mentionedUserId, publicationId, commentText, isReply = false) {
+        console.warn('Using deprecated createMentionNotificationOld method. Use createMentionNotification instead.');
+        return await this.createMentionNotification(fromUser, mentionedUserId, publicationId, commentText, isReply);
     }
 
     // Limpiar notificaciones antiguas (más de 30 días)

@@ -20,6 +20,8 @@ api.get('/publication/:id', auth.ensureAuth, publicationController.getPublicatio
 api.post('/upload-file-post/:id', [auth.ensureAuth, uploadMiddleware.uploadImage(POST_PATH)],publicationController.uploadPublicationFile);
 api.get('/get-image-post/:file', publicationController.getPublicacionFile);
 api.put('/publication-comment/:id', auth.ensureAuth, publicationController.updatePublicationComments);
+api.get('/publication/:id/comments', auth.ensureAuth, publicationController.loadMoreComments);
+api.get('/publication/comment/:commentId/replies', auth.ensureAuth, publicationController.loadMoreReplies);
 
 // Rutas para likes en publicaciones
 api.post('/publication-like/:id', auth.ensureAuth, publicationController.toggleLikePublication);

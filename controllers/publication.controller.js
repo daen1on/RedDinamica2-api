@@ -30,6 +30,9 @@ const savePublication = async (req, res) => {
 };
 const getPublications = async (req, res) => {
     const page = parseInt(req.params.page) || 1;
+    const commentsLimit = parseInt(req.query.commentsLimit) || 10;
+    const repliesLimit = parseInt(req.query.repliesLimit) || 5;
+    
     const follows = await Follow.find({ user: req.user.sub }).populate('followed');
     let followsClean = follows.map(follow => follow.followed._id);
     followsClean.push(req.user.sub); // Includes the user's own publications for fetching
@@ -37,43 +40,63 @@ const getPublications = async (req, res) => {
     try {
         const options = {
             page,
-            limit: ITEMS_PER_PAGE,
+            limit: 10,
             sort: { created_at: -1 },
             populate: [
                 { 
-                    path: 'comments', 
-                    populate: [
-                        { path: 'user', select: 'name surname picture _id' },
-                        { 
-                            path: 'replies', 
-                            populate: { path: 'user', select: 'name surname picture _id' }
-                        }
-                    ]
+                    path: 'user', 
+                    select: 'name surname _id picture' 
                 },
                 { 
-                    path: 'user', 
-                    select: 'name surname picture _id' 
-                },
-                {
-                    path: 'likes',
-                    select: 'name surname picture _id'
+                    path: 'comments',
+                    options: {
+                        sort: { likesCount: -1, created_at: -1 }, // Más likes primero, luego más recientes
+                        limit: commentsLimit
+                    },
+                    populate: [
+                        { path: 'user', select: 'name surname _id picture' },
+                        { 
+                            path: 'replies',
+                            options: {
+                                sort: { likesCount: -1, created_at: -1 }, // Más likes primero, luego más recientes
+                                limit: repliesLimit
+                            },
+                            populate: { path: 'user', select: 'name surname _id picture' }
+                        }
+                    ]
                 }
             ]
         };
 
-        // Execute paginated query
-        const result = await Publication.paginate({ user: { "$in": followsClean } }, options);
+        const result = await Publication.paginate(
+            { user: { $in: followsClean } },
+            options
+        );
+
+        if (result.docs && result.docs.length > 0) {
+            // Agregar información de paginación a cada publicación
+            for (const publication of result.docs) {
+                const totalComments = await Comment.countDocuments({ publication: publication._id });
+                const loadedComments = publication.comments ? publication.comments.length : 0;
+                
+                publication.pagination = {
+                    totalComments,
+                    loadedComments,
+                    commentsLimit,
+                    repliesLimit
+                };
+            }
+        }
 
         return res.status(200).send({
-            totalItems: result.totalDocs,
+            publications: result.docs,
             totalPages: result.totalPages,
-            currentPage: result.page,
-            itemsPerPage: result.limit,
-            publications: result.docs // This is where the actual publications are stored
+            totalDocs: result.totalDocs,
+            page: result.page
         });
     } catch (err) {
-        console.error(err); // Log the error to the console for debugging
-        return res.status(500).send({ message: 'Error in the request. It can not get the publications' });
+        console.error(err);
+        return res.status(500).send({ message: 'Request Error.' });
     }
 };
 
@@ -81,6 +104,8 @@ const getPublications = async (req, res) => {
 const getUserPublications = async (req, res) => {
     const page = parseInt(req.params.page) || 1;
     const userId = req.params.id;
+    const commentsLimit = parseInt(req.query.commentsLimit) || 10;
+    const repliesLimit = parseInt(req.query.repliesLimit) || 5;
 
     try {
         const options = {
@@ -88,12 +113,24 @@ const getUserPublications = async (req, res) => {
             limit: ITEMS_PER_PAGE, 
             sort: { created_at: -1 },
             populate: [
+                { 
+                    path: 'user', 
+                    select: 'name surname _id picture' 
+                },
                 {
                     path: 'comments',
+                    options: { 
+                        limit: commentsLimit,
+                        sort: { likesCount: -1, created_at: -1 }  // Más likes primero
+                    },
                     populate: [
                         { path: 'user', select: 'name surname picture _id' },
                         { 
-                            path: 'replies', 
+                            path: 'replies',
+                            options: { 
+                                limit: repliesLimit,
+                                sort: { likesCount: -1, created_at: -1 }
+                            },
                             populate: { path: 'user', select: 'name surname picture _id' }
                         }
                     ]
@@ -108,12 +145,26 @@ const getUserPublications = async (req, res) => {
         // Using paginate method
         const result = await Publication.paginate({ user: userId }, options);
 
+        // Agregar información de paginación a cada publicación
+        if (result.docs && result.docs.length > 0) {
+            for (const publication of result.docs) {
+                const totalComments = await Comment.countDocuments({ publication: publication._id });
+                const loadedComments = publication.comments ? publication.comments.length : 0;
+                
+                publication.pagination = {
+                    totalComments,
+                    loadedComments,
+                    commentsLimit,
+                    repliesLimit
+                };
+            }
+        }
+
         return res.status(200).send({
-            totalItems: result.totalDocs,
+            publications: result.docs,
             totalPages: result.totalPages,
-            currentPage: result.page,
-            itemsPerPage: result.limit,
-            publications: result.docs // The documents are returned in the docs property
+            totalDocs: result.totalDocs,
+            page: result.page
         });
     } catch (err) {
         console.error(err); //log the error to console
@@ -124,10 +175,66 @@ const getUserPublications = async (req, res) => {
 
 const getPublication = async (req, res) => {
     const publicationId = req.params.id;
+    const commentsLimit = parseInt(req.query.commentsLimit) || 10;
+    const repliesLimit = parseInt(req.query.repliesLimit) || 5;
+    
     try {
-        const publication = await Publication.findById(publicationId);
-        return res.status(200).send({ publication });
+        const publication = await Publication.findById(publicationId)
+            .populate([
+                { 
+                    path: 'comments', 
+                    options: { 
+                        limit: commentsLimit,
+                        sort: { likesCount: -1, created_at: -1 } // Más likes primero, luego más recientes
+                    },
+                    populate: [
+                        { path: 'user', select: 'name surname picture _id' },
+                        { 
+                            path: 'replies', 
+                            options: { 
+                                limit: repliesLimit,
+                                sort: { created_at: 1 } // Más antiguos primero para respuestas
+                            },
+                            populate: { path: 'user', select: 'name surname picture _id' }
+                        }
+                    ]
+                },
+                { 
+                    path: 'user', 
+                    select: 'name surname picture _id' 
+                },
+                {
+                    path: 'likes',
+                    select: 'name surname picture _id'
+                }
+            ]);
+        
+        if (!publication) {
+            return res.status(404).send({ message: 'Publication not found' });
+        }
+
+        // Obtener conteos totales de comentarios y respuestas
+        const totalComments = await Comment.countDocuments({ publication: publicationId });
+        
+        // Para cada comentario, obtener el conteo total de respuestas
+        if (publication.comments) {
+            for (let comment of publication.comments) {
+                const totalReplies = await Comment.countDocuments({ parentId: comment._id });
+                comment.totalReplies = totalReplies;
+            }
+        }
+        
+        return res.status(200).send({ 
+            publication,
+            pagination: {
+                totalComments,
+                loadedComments: publication.comments ? publication.comments.length : 0,
+                commentsLimit,
+                repliesLimit
+            }
+        });
     } catch (err) {
+        console.error('Error getting publication:', err);
         return res.status(500).send({ message: 'Error in the request. It can not be get the publication' });
     }
 };
@@ -288,6 +395,87 @@ const getPublicationLikes = async (req, res) => {
     }
 };
 
+// Cargar más comentarios para una publicación
+const loadMoreComments = async (req, res) => {
+    const publicationId = req.params.id;
+    const page = parseInt(req.query.page) || 1;
+    const limit = parseInt(req.query.limit) || 10;
+    const skip = (page - 1) * limit;
+    
+    try {
+        // Primero, verificar cuántos comentarios hay en total para esta publicación
+        const totalCommentsCheck = await Comment.countDocuments({ publication: publicationId });
+        
+        const comments = await Comment.find({ publication: publicationId })
+            .populate('user', 'name surname picture _id')
+            .sort({ likesCount: -1, created_at: -1 })  // Más likes primero, luego más recientes
+            .skip(skip)
+            .limit(limit);
+            
+        // Para cada comentario, cargar las primeras 5 respuestas
+        for (let comment of comments) {
+            const replies = await Comment.find({ parentId: comment._id })
+                .populate('user', 'name surname picture _id')
+                .sort({ created_at: 1 })
+                .limit(5);
+            
+            const totalReplies = await Comment.countDocuments({ parentId: comment._id });
+            comment.replies = replies;
+            comment.totalReplies = totalReplies;
+        }
+
+        const totalComments = await Comment.countDocuments({ publication: publicationId });
+        const hasMore = skip + comments.length < totalComments;
+
+        return res.status(200).send({
+            comments,
+            pagination: {
+                page,
+                limit,
+                totalComments,
+                loadedCount: comments.length,
+                hasMore
+            }
+        });
+    } catch (err) {
+        console.error('Error loading more comments:', err);
+        return res.status(500).send({ message: 'Error loading more comments' });
+    }
+};
+
+// Cargar más respuestas para un comentario
+const loadMoreReplies = async (req, res) => {
+    const commentId = req.params.commentId;
+    const page = parseInt(req.query.page) || 1;
+    const limit = parseInt(req.query.limit) || 5;
+    const skip = (page - 1) * limit;
+    
+    try {
+        const replies = await Comment.find({ parentId: commentId })
+            .populate('user', 'name surname picture _id')
+            .sort({ created_at: 1 })
+            .skip(skip)
+            .limit(limit);
+
+        const totalReplies = await Comment.countDocuments({ parentId: commentId });
+        const hasMore = skip + replies.length < totalReplies;
+
+        return res.status(200).send({
+            replies,
+            pagination: {
+                page,
+                limit,
+                totalReplies,
+                loadedCount: replies.length,
+                hasMore
+            }
+        });
+    } catch (err) {
+        console.error('Error loading more replies:', err);
+        return res.status(500).send({ message: 'Error loading more replies' });
+    }
+};
+
 module.exports = {
     getUserPublications,
     savePublication,
@@ -299,5 +487,7 @@ module.exports = {
     uploadPublicationFile,
     getPublicacionFile,
     toggleLikePublication,
-    getPublicationLikes
+    getPublicationLikes,
+    loadMoreComments,
+    loadMoreReplies
 };
