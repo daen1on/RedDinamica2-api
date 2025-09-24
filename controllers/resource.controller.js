@@ -11,6 +11,7 @@ let path = require('path');
 // Load models
 let Resource = require('../models/resource.model');
 let Comment = require('../models/comment.model');
+let User = require('../models/user.model');
 const NotificationService = require('../services/notification.service');
 
 
@@ -28,8 +29,33 @@ const saveResource = async (req, res) => {
     resource.url = params.url;
     try {
         const resourceStored = await resource.save();
+        
+        // Obtener datos del autor para las notificaciones
+        const author = await User.findById(params.author);
+        if (author) {
+            // 1. Notificar al usuario que su recurso fue enviado
+            await NotificationService.createResourceSubmittedNotification(
+                author._id,
+                resourceStored._id,
+                resourceStored.name
+            ).catch(err => console.error('Error creating resource submitted notification:', err));
+            
+            // 2. Notificar a los administradores
+            const adminUsers = await User.find({ role: { $in: ['admin', 'delegated_admin'] } }, '_id');
+            if (adminUsers && adminUsers.length > 0) {
+                const adminIds = adminUsers.map(admin => admin._id);
+                await NotificationService.createNewResourcePendingNotification(
+                    author,
+                    resourceStored._id,
+                    resourceStored.name,
+                    adminIds
+                ).catch(err => console.error('Error creating admin notification:', err));
+            }
+        }
+        
         return res.status(200).send({ resource: resourceStored });
     } catch (err) {
+        console.error('Error saving resource:', err);
         return res.status(500).send({ message: 'Error in the request. The resource can not be saved' });
     }
 };
@@ -100,7 +126,10 @@ const updateResource = async (req, res) => {
         // Verificar si cambió el estado de aceptación
         if (updateData.hasOwnProperty('accepted') && currentResource.accepted !== updateData.accepted) {
             if (updateData.accepted === true) {
-                // Recurso aprobado
+                // Recurso aprobado - también hacerlo visible
+                updateData.visible = true;
+                await Resource.findByIdAndUpdate(resourceId, { visible: true });
+                
                 await NotificationService.createResourceApprovedNotification(
                     currentResource.author._id,
                     resourceId,
@@ -194,15 +223,20 @@ const rejectResource = async (req, res) => {
 
 const getResources = async (req, res) => {
     const page = req.params.page || 1;
+    const userId = req.user.sub || req.user.id;
+    
+    // Query para recursos aprobados y visibles
     let findQuery = {
-        accepted: true
+        $or: [
+            // Recursos aprobados y visibles para todos
+            { accepted: true, visible: req.params.visibleOnes === 'true' ? true : { $exists: true } },
+            // Recursos del usuario actual (aunque estén pendientes)
+            { author: userId }
+        ]
     };
 
-    if(req.params.visibleOnes == 'true'){
-        findQuery.visible = true;
-    }
-
     try {
+        const total = await Resource.countDocuments(findQuery);
         const resources = await Resource.find(findQuery)
             .sort('name')
             .populate({
@@ -222,13 +256,17 @@ const getResources = async (req, res) => {
 };
 const getAllResources = async (req, res) => {
     let order = `-${req.params.order}`;
+    const userId = req.user.sub || req.user.id;
+    
+    // Query para recursos aprobados y visibles + recursos del usuario actual
     let findQuery = {
-        accepted: true
+        $or: [
+            // Recursos aprobados y visibles para todos
+            { accepted: true, visible: req.params.visibleOnes === 'true' ? true : { $exists: true } },
+            // Recursos del usuario actual (aunque estén pendientes)
+            { author: userId }
+        ]
     };
-
-    if(req.params.visibleOnes == 'true'){
-        findQuery.visible = true;
-    }
 
     if(!req.params.order){
         order = 'name';
@@ -251,6 +289,7 @@ const getSuggestResources = async (req, res) => {
     const page = req.params.page || 1;
 
     try {
+        const total = await Resource.countDocuments({accepted: false});
         const resources = await Resource.find({accepted: false })
             .populate('author', 'name surname picture _id')
             .sort('name').paginate(page, ITEMS_PER_PAGE);
