@@ -553,6 +553,25 @@ const getAllUsers = async (req, res) => {
     }
 }
 
+// Búsqueda paginada por nombre o email (typeahead)
+const searchUsers = async (req, res) => {
+    const q = (req.query.q || '').toString().trim();
+    const limit = Math.min(parseInt(req.query.limit) || 8, 25);
+    if (!q) {
+        return res.status(200).send({ users: [] });
+    }
+    try {
+        const regex = new RegExp(q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i');
+        const users = await User.find(
+            { $or: [ { name: regex }, { surname: regex }, { email: regex } ], name: { $ne: 'Usuario RedDinámica' } },
+            'name surname email role picture'
+        ).limit(limit).sort({ name: 1 });
+        return res.status(200).send({ users });
+    } catch (err) {
+        return res.status(500).send({ message: 'Error in the request' });
+    }
+};
+
 const followsUserId = async (userId) => {
     try {
         const following = await Follow.find({ user: userId }, { '_id': 0, '_v': 0, 'user': 0 });
@@ -651,6 +670,7 @@ module.exports = {
     getUser,
     getUsers,
     getAllUsers,
+    searchUsers,
     getNewUsers,
     getCounters,
     updateUser,
