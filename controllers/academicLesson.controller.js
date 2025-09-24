@@ -11,13 +11,9 @@ exports.createLesson = async (req, res) => {
             title, 
             resume, 
             academicGroup, 
-            level, 
-            objectives, 
-            methodology, 
-            evaluation, 
-            resources, 
-            duration, 
-            difficulty 
+            justification,
+            tags,
+            knowledge_areas
         } = req.body;
         const authorId = req.user.sub || req.user.id;
 
@@ -62,18 +58,35 @@ exports.createLesson = async (req, res) => {
             });
         }
 
+        // Determinar el teacher del grupo
+        const teacher = await User.findById(group.teacher);
+        
         const lesson = new AcademicLesson({
             title,
             resume,
             academicGroup,
             author: authorId,
-            level,
-            objectives,
-            methodology,
-            evaluation,
-            resources,
-            duration,
-            difficulty,
+            teacher: group.teacher,
+            leader: authorId, // El creador es el líder por defecto
+            justification: {
+                methodology: justification?.methodology || '',
+                objectives: justification?.objectives || ''
+            },
+            tags: tags ? tags.split(',').map(tag => tag.trim()) : [],
+            knowledge_areas: knowledge_areas || [],
+            
+            // Nuevos campos inicializados
+            files: [],
+            conversations: [],
+            level: group.subjects || [], // Heredar materias del grupo como niveles
+            state: 'draft',
+            development_group: [{
+                user: authorId,
+                role: 'leader',
+                status: 'active'
+            }],
+            comments: [],
+            
             status: 'draft',
             academicSettings: {
                 academicLevel: group.academicLevel,
@@ -92,9 +105,17 @@ exports.createLesson = async (req, res) => {
             $inc: { 'academicStatistics.totalLessonsCreated': 1 }
         });
 
+        // Populate los datos para la respuesta
+        await savedLesson.populate([
+            { path: 'author', select: 'name surname email' },
+            { path: 'teacher', select: 'name surname email' },
+            { path: 'leader', select: 'name surname email' },
+            { path: 'development_group.user', select: 'name surname email' }
+        ]);
+
         res.status(201).json({
             status: 'success',
-            message: 'Lección académica creada exitosamente',
+            message: 'Lección académica creada exitosamente. Ahora puedes invitar colaboradores al grupo de desarrollo.',
             data: savedLesson
         });
     } catch (error) {
@@ -574,6 +595,180 @@ exports.exportToMain = async (req, res) => {
         });
     } catch (error) {
         console.error('Error al exportar lección:', error);
+        res.status(500).json({
+            status: 'error',
+            message: 'Error interno del servidor',
+            error: error.message
+        });
+    }
+};
+
+// Agregar miembro al grupo de desarrollo
+exports.addToDevelopmentGroup = async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { userId, role = 'collaborator' } = req.body;
+        const requesterId = req.user.sub || req.user.id;
+
+        const lesson = await AcademicLesson.findById(id);
+        if (!lesson) {
+            return res.status(404).json({
+                status: 'error',
+                message: 'Lección no encontrada'
+            });
+        }
+
+        // Verificar permisos (solo el líder o profesor puede agregar miembros)
+        const isLeader = lesson.leader.toString() === requesterId;
+        const isTeacher = lesson.teacher.toString() === requesterId;
+        
+        if (!isLeader && !isTeacher && req.user.role !== 'admin') {
+            return res.status(403).json({
+                status: 'error',
+                message: 'Solo el líder de la lección o el profesor pueden agregar miembros'
+            });
+        }
+
+        // Verificar que el usuario no esté ya en el grupo
+        const existingMember = lesson.development_group.find(
+            member => member.user.toString() === userId
+        );
+
+        if (existingMember) {
+            return res.status(400).json({
+                status: 'error',
+                message: 'El usuario ya es miembro del grupo de desarrollo'
+            });
+        }
+
+        // Agregar al grupo
+        lesson.development_group.push({
+            user: userId,
+            role: role,
+            status: 'active'
+        });
+
+        await lesson.save();
+        await lesson.populate('development_group.user', 'name surname email');
+
+        res.status(200).json({
+            status: 'success',
+            message: 'Miembro agregado al grupo de desarrollo exitosamente',
+            data: lesson.development_group
+        });
+
+    } catch (error) {
+        console.error('Error al agregar miembro al grupo de desarrollo:', error);
+        res.status(500).json({
+            status: 'error',
+            message: 'Error interno del servidor',
+            error: error.message
+        });
+    }
+};
+
+// Actualizar estado de la lección (solo el líder puede hacerlo)
+exports.updateLessonState = async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { state, message } = req.body;
+        const userId = req.user.sub || req.user.id;
+
+        const lesson = await AcademicLesson.findById(id);
+        if (!lesson) {
+            return res.status(404).json({
+                status: 'error',
+                message: 'Lección no encontrada'
+            });
+        }
+
+        // Verificar que el usuario sea el líder
+        if (lesson.leader.toString() !== userId && req.user.role !== 'admin') {
+            return res.status(403).json({
+                status: 'error',
+                message: 'Solo el líder de la lección puede cambiar su estado'
+            });
+        }
+
+        const validStates = ['draft', 'in_development', 'review_requested', 'under_review', 'approved', 'rejected', 'completed', 'ready_for_migration'];
+        if (!validStates.includes(state)) {
+            return res.status(400).json({
+                status: 'error',
+                message: 'Estado inválido'
+            });
+        }
+
+        lesson.state = state;
+        
+        // Si hay un mensaje, agregarlo como comentario del sistema
+        if (message) {
+            lesson.comments.push({
+                content: `Estado cambiado a "${state}": ${message}`,
+                author: userId,
+                type: 'feedback',
+                isFromTeacher: false
+            });
+        }
+
+        await lesson.save();
+
+        res.status(200).json({
+            status: 'success',
+            message: `Estado de la lección actualizado a: ${state}`,
+            data: { state: lesson.state, comments: lesson.comments }
+        });
+
+    } catch (error) {
+        console.error('Error al actualizar estado de la lección:', error);
+        res.status(500).json({
+            status: 'error',
+            message: 'Error interno del servidor',
+            error: error.message
+        });
+    }
+};
+
+// Agregar comentario del profesor
+exports.addTeacherComment = async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { content, type = 'feedback' } = req.body;
+        const userId = req.user.sub || req.user.id;
+
+        const lesson = await AcademicLesson.findById(id);
+        if (!lesson) {
+            return res.status(404).json({
+                status: 'error',
+                message: 'Lección no encontrada'
+            });
+        }
+
+        // Verificar que el usuario sea el profesor del grupo
+        if (lesson.teacher.toString() !== userId && req.user.role !== 'admin') {
+            return res.status(403).json({
+                status: 'error',
+                message: 'Solo el profesor puede agregar comentarios'
+            });
+        }
+
+        lesson.comments.push({
+            content,
+            author: userId,
+            type,
+            isFromTeacher: true
+        });
+
+        await lesson.save();
+        await lesson.populate('comments.author', 'name surname email');
+
+        res.status(200).json({
+            status: 'success',
+            message: 'Comentario agregado exitosamente',
+            data: lesson.comments
+        });
+
+    } catch (error) {
+        console.error('Error al agregar comentario:', error);
         res.status(500).json({
             status: 'error',
             message: 'Error interno del servidor',

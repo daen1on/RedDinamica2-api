@@ -40,8 +40,8 @@ exports.createGroup = async (req, res) => {
                 activeLessons: 0
             },
             permissions: {
-                studentsCanCreateLessons: false,
-                studentsCanEditLessons: false,
+                studentsCanCreateLessons: true,
+                studentsCanEditLessons: true,
                 studentsCanDeleteLessons: false,
                 studentsCanViewAllLessons: true
             }
@@ -76,8 +76,8 @@ exports.getTeacherGroups = async (req, res) => {
     try {
         const teacherId = req.user.sub || req.user.id;
         const groups = await AcademicGroup.find({ teacher: teacherId })
-            .populate('students', 'name email avatar')
-            .populate('teacher', 'name email avatar')
+            .populate('students', 'name surname email avatar')
+            .populate('teacher', 'name surname email avatar')
             .sort({ createdAt: -1 });
 
         res.status(200).json({
@@ -99,8 +99,8 @@ exports.getStudentGroups = async (req, res) => {
     try {
         const studentId = req.user.sub || req.user.id;
         const groups = await AcademicGroup.find({ students: studentId })
-            .populate('teacher', 'name email avatar')
-            .populate('students', 'name email avatar')
+            .populate('teacher', 'name surname email avatar')
+            .populate('students', 'name surname email avatar')
             .sort({ createdAt: -1 });
 
         res.status(200).json({
@@ -122,13 +122,13 @@ exports.getGroupById = async (req, res) => {
     try {
         const { id } = req.params;
         const group = await AcademicGroup.findById(id)
-            .populate('teacher', 'name email avatar')
-            .populate('students', 'name email avatar academicProfile')
+            .populate('teacher', 'name surname email avatar')
+            .populate('students', 'name surname email avatar academicProfile')
             .populate({
                 path: 'lessons',
                 populate: {
                     path: 'author',
-                    select: 'name email avatar'
+                    select: 'name surname email avatar'
                 }
             });
 
@@ -198,8 +198,8 @@ exports.updateGroup = async (req, res) => {
                 subjects
             },
             { new: true }
-        ).populate('teacher', 'name email avatar')
-         .populate('students', 'name email avatar');
+        ).populate('teacher', 'name surname email avatar')
+         .populate('students', 'name surname email avatar');
 
         res.status(200).json({
             status: 'success',
@@ -388,7 +388,7 @@ exports.inviteStudentByEmail = async (req, res) => {
                     'Invitación a RedDinámica Académica',
                     user.email,
                     `
-                    <h3>Hola ${user.name || ''}</h3>
+                    <h3>Hola ${user.name ||user.surname || ''}</h3>
                     <p>Has sido invitado a participar en un grupo de <strong>RedDinámica Académica</strong>.</p>
                     <p>Tu acceso ha sido creado con rol <strong>Invitado</strong>.</p>
                     <p>Ingresa a <a href="${loginUrl}">RedDinámica</a> con:</p>
@@ -486,8 +486,9 @@ exports.getGroupStudents = async (req, res) => {
         }
 
         // Verificar permisos
+        const userId = req.user.sub || req.user.id;
         if (group.teacher.toString() !== teacherId && 
-            !group.students.includes(req.user.id) && 
+            !group.students.includes(userId) && 
             req.user.role !== 'admin') {
             return res.status(403).json({
                 status: 'error',
@@ -496,7 +497,7 @@ exports.getGroupStudents = async (req, res) => {
         }
 
         const students = await User.find({ _id: { $in: group.students } })
-            .select('name email avatar academicProfile academicStatistics');
+            .select('name surname email avatar academicProfile academicStatistics');
 
         res.status(200).json({
             status: 'success',

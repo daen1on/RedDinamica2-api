@@ -5,31 +5,11 @@ const Schema = mongoose.Schema;
 
 // Esquemas reutilizados del modelo Lesson
 const callSchema = new Schema({
-    title: {
-        type: String,
-        required: true
-    },
-    description: {
-        type: String,
-        required: true
-    },
-    date: {
-        type: Date,
-        required: true
-    },
-    duration: {
-        type: Number,
-        required: true
-    },
-    participants: [{
-        type: Schema.ObjectId,
-        ref: 'User'
-    }],
-    status: {
-        type: String,
-        enum: ['scheduled', 'in-progress', 'completed', 'cancelled'],
-        default: 'scheduled'
-    }
+    text: String,
+    visible: { type: Boolean, default: false },
+    author: { type: Schema.Types.ObjectId, ref: 'User' },
+    interested: [{ type: Schema.Types.ObjectId, ref: 'User' }],
+    created_at: { type: Date, default: Date.now }
 });
 
 const fileSchema = new Schema({
@@ -114,41 +94,127 @@ const academicLessonSchema = new Schema({
         type: Schema.ObjectId,
         ref: 'User'
     },
-    level: {
+    leader: {
+        type: Schema.ObjectId,
+        ref: 'User',
+        required: true
+    },
+    
+    justification: {
+        methodology: {
+            type: String,
+            required: true,
+            trim: true
+        },
+        objectives: {
+            type: String,
+            required: true,
+            trim: true
+        }
+    },
+    
+    // Nuevos campos requeridos
+    files: [{
+        name: {
+            type: String,
+            required: true
+        },
+        originalName: {
+            type: String,
+            required: true
+        },
+        path: {
+            type: String,
+            required: true
+        },
+        size: {
+            type: Number,
+            required: true
+        },
+        mimeType: {
+            type: String,
+            required: true
+        },
+        uploadedBy: {
+            type: Schema.ObjectId,
+            ref: 'User',
+            required: true
+        },
+        uploadedAt: {
+            type: Date,
+            default: Date.now
+        }
+    }],
+    
+    conversations: [{
+        title: {
+            type: String,
+            required: true
+        },
+        participants: [{
+            type: Schema.ObjectId,
+            ref: 'User'
+        }],
+        messages: [{
+            content: {
+                type: String,
+                required: true
+            },
+            author: {
+                type: Schema.ObjectId,
+                ref: 'User',
+                required: true
+            },
+            timestamp: {
+                type: Date,
+                default: Date.now
+            },
+            edited: {
+                type: Boolean,
+                default: false
+            },
+            editedAt: {
+                type: Date
+            }
+        }],
+        createdAt: {
+            type: Date,
+            default: Date.now
+        }
+    }],
+    
+    level: [{
+        type: String
+    }],
+    
+    state: {
         type: String,
-        required: true,
-        enum: ['Básico', 'Intermedio', 'Avanzado', 'Colegio']
+        enum: ['proposed', 'assigned', 'development', 'test', 'completed'],
+        default: 'proposed'
     },
-    objectives: {
-        type: String,
-        required: true,
-        trim: true
-    },
-    methodology: {
-        type: String,
-        required: true,
-        trim: true
-    },
-    evaluation: {
-        type: String,
-        required: true,
-        trim: true
-    },
-    resources: {
-        type: String,
-        trim: true
-    },
-    duration: {
-        type: Number,
-        required: true,
-        min: 1,
-        max: 480 // 8 horas máximo
-    },
-    difficulty: {
-        type: String,
-        required: true,
-        enum: ['Fácil', 'Moderado', 'Difícil']
-    },
+    
+    development_group: [{
+        user: {
+            type: Schema.ObjectId,
+            ref: 'User',
+            required: true
+        },
+        role: {
+            type: String,
+            enum: ['leader', 'collaborator', 'reviewer'],
+            default: 'collaborator'
+        },
+        joinedAt: {
+            type: Date,
+            default: Date.now
+        },
+        status: {
+            type: String,
+            enum: ['active', 'inactive', 'removed'],
+            default: 'active'
+        }
+    }],
+    
     status: {
         type: String,
         required: true,
@@ -209,6 +275,7 @@ const academicLessonSchema = new Schema({
         type: Schema.ObjectId,
         ref: 'User'
     }],
+    // Comentarios del profesor sobre el progreso de la lección
     comments: [{
         content: {
             type: String,
@@ -223,21 +290,15 @@ const academicLessonSchema = new Schema({
             type: Date,
             default: Date.now
         },
-        replies: [{
-            content: {
-                type: String,
-                required: true
-            },
-            author: {
-                type: Schema.ObjectId,
-                ref: 'User',
-                required: true
-            },
-            timestamp: {
-                type: Date,
-                default: Date.now
-            }
-        }]
+        type: {
+            type: String,
+            enum: ['feedback', 'suggestion', 'approval', 'correction'],
+            default: 'feedback'
+        },
+        isFromTeacher: {
+            type: Boolean,
+            default: false
+        }
     }],
     // Timestamps para seguimiento
     proposedAt: {
