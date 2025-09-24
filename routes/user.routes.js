@@ -26,6 +26,7 @@ api.delete('/user/:id', [auth.ensureAuth, controlAccess.isAdmin], userController
 api.get('/user/:id', auth.ensureAuth , userController.getUser);
 api.get('/users/:page?', auth.ensureAuth , userController.getUsers);
 api.get('/all-users', auth.ensureAuth , userController.getAllUsers);
+api.get('/users/search', auth.ensureAuth , userController.searchUsers);
 api.get('/new-users/:page?', [auth.ensureAuth, controlAccess.isAdmin], userController.getNewUsers);
 api.get('/counters/:id?', auth.ensureAuth , userController.getCounters);
 
