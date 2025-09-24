@@ -91,12 +91,16 @@ class NotificationService {
 
     // 4. Notificación de nuevo seguidor (CORREGIDA)
     static async createFollowNotification(fromUser, toUser) {
+        console.log('=== createFollowNotification ===');
+        console.log('From user (seguidor):', fromUser.name, fromUser.surname, fromUser._id);
+        console.log('To user (seguido):', toUser);
+        
         return await Notification.createNotification({
             user: toUser,
             type: 'follow',
             title: 'Nuevo seguidor',
             content: `${fromUser.name} ${fromUser.surname} ha comenzado a seguirte`,
-            link: `/profile/${fromUser._id}`,
+            link: `/perfil/${fromUser._id}/publicaciones`,
             relatedId: fromUser._id,
             relatedModel: 'User',
             from: fromUser._id,
@@ -125,14 +129,50 @@ class NotificationService {
         return await Notification.insertMany(notifications);
     }
 
-    // 6. Notificación de recurso aprobado
+    // 6. Notificación de recurso enviado para aprobación (al usuario)
+    static async createResourceSubmittedNotification(resourceAuthor, resourceId, resourceName) {
+        return await Notification.createNotification({
+            user: resourceAuthor,
+            type: 'resource',
+            title: 'Recurso enviado para aprobación',
+            content: `Tu recurso "${resourceName}" se ha enviado correctamente y está siendo revisado por el administrador`,
+            link: `/inicio/recursos`,
+            relatedId: resourceId,
+            relatedModel: 'Resource',
+            from: resourceAuthor,
+            priority: 'medium'
+        });
+    }
+
+    // 7. Notificación a administradores de nuevo recurso pendiente
+    static async createNewResourcePendingNotification(resourceAuthor, resourceId, resourceName, adminUsers) {
+        const notificationData = {
+            type: 'resource',
+            title: 'Nuevo recurso pendiente de aprobación',
+            content: `${resourceAuthor.name} ${resourceAuthor.surname} ha enviado un nuevo recurso "${resourceName}" para aprobación`,
+            link: `/admin/recursos`,
+            relatedId: resourceId,
+            relatedModel: 'Resource',
+            from: resourceAuthor._id,
+            priority: 'medium'
+        };
+
+        const notifications = adminUsers.map(adminId => ({
+            user: adminId,
+            ...notificationData
+        }));
+
+        return await Notification.insertMany(notifications);
+    }
+
+    // 8. Notificación de recurso aprobado
     static async createResourceApprovedNotification(resourceAuthor, resourceId, resourceName, approvedBy) {
         return await Notification.createNotification({
             user: resourceAuthor,
             type: 'resource',
             title: '¡Tu recurso fue aprobado!',
             content: `Tu recurso "${resourceName}" ha sido aprobado y ahora está visible en la red`,
-            link: `/resources/${resourceId}`,
+            link: `/inicio/recursos`,
             relatedId: resourceId,
             relatedModel: 'Resource',
             from: approvedBy,
@@ -140,7 +180,7 @@ class NotificationService {
         });
     }
 
-    // 7. Notificación de recurso rechazado
+    // 9. Notificación de recurso rechazado
     static async createResourceRejectedNotification(resourceAuthor, resourceId, resourceName, rejectedBy, reason = '') {
         return await Notification.createNotification({
             user: resourceAuthor,
@@ -155,7 +195,7 @@ class NotificationService {
         });
     }
 
-    // 8. Notificación de usuario aprobado
+    // 10. Notificación de usuario aprobado
     static async createUserApprovedNotification(approvedUserId, approvedBy) {
         return await Notification.createNotification({
             user: approvedUserId,
@@ -170,7 +210,7 @@ class NotificationService {
         });
     }
 
-    // 9. Notificación a administradores de nuevo usuario registrado
+    // 11. Notificación a administradores de nuevo usuario registrado
     static async createNewUserRegistrationNotification(newUser, adminUsers) {
         const notificationData = {
             type: 'system',
@@ -191,6 +231,316 @@ class NotificationService {
         return await Notification.insertMany(notifications);
     }
 
+    // ===== NUEVAS FUNCIONES PARA SUGERENCIAS DE LECCIONES =====
+
+    // 12. Notificación de nueva sugerencia de lección (al usuario que sugiere)
+    static async createLessonSuggestionSubmittedNotification(suggestionAuthor, lessonId, lessonTitle) {
+        return await Notification.createNotification({
+            user: suggestionAuthor,
+            type: 'lesson',
+            title: 'Sugerencia de lección enviada',
+            content: `Tu sugerencia de lección "${lessonTitle}" se ha enviado correctamente y está siendo revisada por el administrador`,
+            link: `/inicio/lecciones`,
+            relatedId: lessonId,
+            relatedModel: 'Lesson',
+            from: suggestionAuthor,
+            priority: 'medium'
+        });
+    }
+
+    // 13. Notificación a administradores de nueva sugerencia de lección
+    static async createNewLessonSuggestionNotification(suggestionAuthor, lessonId, lessonTitle, adminUsers) {
+        const notificationData = {
+            type: 'lesson',
+            title: 'Nueva sugerencia de lección',
+            content: `${suggestionAuthor.name} ${suggestionAuthor.surname} ha sugerido una nueva lección: "${lessonTitle}". Revisa y gestiona la convocatoria.`,
+            link: `/admin/lecciones?lesson=${lessonId}&action=review`,
+            relatedId: lessonId,
+            relatedModel: 'Lesson',
+            from: suggestionAuthor._id,
+            priority: 'medium'
+        };
+
+        const notifications = adminUsers.map(adminId => ({
+            user: adminId,
+            ...notificationData
+        }));
+
+        return await Notification.insertMany(notifications);
+    }
+
+    // 14. Notificación al facilitador sugerido
+    static async createFacilitatorSuggestionNotification(suggestionAuthor, facilitatorId, lessonId, lessonTitle) {
+        console.log('=== Creating facilitator suggestion notification ===');
+        console.log('Suggestion Author:', suggestionAuthor.name, suggestionAuthor.surname);
+        console.log('Facilitator ID:', facilitatorId);
+        console.log('Lesson ID:', lessonId);
+        console.log('Lesson Title:', lessonTitle);
+        console.log('Link will be: /inicio/asesorar-lecciones');
+        
+        const notification = await Notification.createNotification({
+            user: facilitatorId,
+            type: 'lesson',
+            title: 'Te han sugerido como facilitador',
+            content: `${suggestionAuthor.name} ${suggestionAuthor.surname} te ha sugerido como facilitador para la lección "${lessonTitle}". Revisa tus invitaciones para aprobar o rechazar.`,
+            link: `/inicio/asesorar-lecciones`,
+            relatedId: lessonId,
+            relatedModel: 'Lesson',
+            from: suggestionAuthor._id,
+            priority: 'high'
+        });
+        
+        console.log('Created notification:', notification);
+        return notification;
+    }
+
+    // 15. Notificación de sugerencia de lección aprobada
+    static async createLessonSuggestionApprovedNotification(suggestionAuthor, lessonId, lessonTitle, approvedBy) {
+        return await Notification.createNotification({
+            user: suggestionAuthor,
+            type: 'lesson',
+            title: '¡Tu sugerencia de lección fue aprobada!',
+            content: `Tu sugerencia de lección "${lessonTitle}" ha sido aprobada y se está preparando para desarrollo`,
+            link: `/lessons/${lessonId}`,
+            relatedId: lessonId,
+            relatedModel: 'Lesson',
+            from: approvedBy,
+            priority: 'high'
+        });
+    }
+
+    // 16. Notificación de sugerencia de lección rechazada
+    static async createLessonSuggestionRejectedNotification(suggestionAuthor, lessonId, lessonTitle, rejectedBy, reason = '') {
+        const reasonText = reason ? ` Motivo: ${reason}` : '';
+        return await Notification.createNotification({
+            user: suggestionAuthor,
+            type: 'lesson',
+            title: 'Tu sugerencia de lección necesita revisión',
+            content: `Tu sugerencia de lección "${lessonTitle}" necesita ser revisada.${reasonText}`,
+            link: `/lessons/${lessonId}`,
+            relatedId: lessonId,
+            relatedModel: 'Lesson',
+            from: rejectedBy,
+            priority: 'high'
+        });
+    }
+
+    // 17. Notificación de facilitador que acepta la invitación
+    static async createFacilitatorAcceptedNotification(facilitator, lessonId, lessonTitle, adminUsers, suggestionAuthor) {
+        const notificationData = {
+            type: 'lesson',
+            title: 'Facilitador aceptó invitación',
+            content: `${facilitator.name} ${facilitator.surname} ha aceptado ser facilitador de la lección "${lessonTitle}"`,
+            link: `/admin/lecciones?lesson=${lessonId}&action=manage`,
+            relatedId: lessonId,
+            relatedModel: 'Lesson',
+            from: facilitator._id,
+            priority: 'high'
+        };
+
+        // Notificar a administradores
+        const adminNotifications = adminUsers.map(adminId => ({
+            user: adminId,
+            ...notificationData
+        }));
+
+        // Notificar al autor de la sugerencia
+        const authorNotification = {
+            user: suggestionAuthor,
+            type: 'lesson',
+            title: 'El facilitador aceptó tu sugerencia',
+            content: `${facilitator.name} ${facilitator.surname} ha aceptado ser facilitador de tu lección sugerida "${lessonTitle}"`,
+            link: `/lessons/${lessonId}`,
+            relatedId: lessonId,
+            relatedModel: 'Lesson',
+            from: facilitator._id,
+            priority: 'high'
+        };
+
+        const allNotifications = [...adminNotifications, authorNotification];
+        return await Notification.insertMany(allNotifications);
+    }
+
+    // 18. Notificación de facilitador que rechaza la invitación
+    static async createFacilitatorRejectedNotification(facilitator, lessonId, lessonTitle, adminUsers, suggestionAuthor, reason = '') {
+        const reasonText = reason ? ` Motivo: ${reason}` : '';
+        
+        const notificationData = {
+            type: 'lesson',
+            title: 'Facilitador rechazó invitación',
+            content: `${facilitator.name} ${facilitator.surname} ha rechazado ser facilitador de la lección "${lessonTitle}".${reasonText}`,
+            link: `/admin/lecciones?lesson=${lessonId}&action=manage`,
+            relatedId: lessonId,
+            relatedModel: 'Lesson',
+            from: facilitator._id,
+            priority: 'medium'
+        };
+
+        // Notificar a administradores
+        const adminNotifications = adminUsers.map(adminId => ({
+            user: adminId,
+            ...notificationData
+        }));
+
+        // Notificar al autor de la sugerencia
+        const authorNotification = {
+            user: suggestionAuthor,
+            type: 'lesson',
+            title: 'El facilitador rechazó la invitación',
+            content: `${facilitator.name} ${facilitator.surname} ha rechazado ser facilitador de tu lección sugerida "${lessonTitle}".${reasonText}`,
+            link: `/lessons/${lessonId}`,
+            relatedId: lessonId,
+            relatedModel: 'Lesson',
+            from: facilitator._id,
+            priority: 'medium'
+        };
+
+        const allNotifications = [...adminNotifications, authorNotification];
+        return await Notification.insertMany(allNotifications);
+    }
+
+    // 19. Notificación de lección auto-aprobada por facilitador
+    static async createLessonAutoApprovedByFacilitatorNotification(facilitator, lessonId, lessonTitle, adminUsers, suggestionAuthor) {
+        const notificationData = {
+            type: 'lesson',
+            title: 'Lección aprobada automáticamente',
+            content: `La lección "${lessonTitle}" ha sido aprobada automáticamente porque el facilitador ${facilitator.name} ${facilitator.surname} aceptó liderar el desarrollo`,
+            link: `/admin/lecciones?lesson=${lessonId}&action=manage`,
+            relatedId: lessonId,
+            relatedModel: 'Lesson',
+            from: facilitator._id,
+            priority: 'high'
+        };
+
+        // Notificar a administradores
+        const adminNotifications = adminUsers.map(adminId => ({
+            user: adminId,
+            ...notificationData
+        }));
+
+        // Notificar al autor de la sugerencia
+        const authorNotification = {
+            user: suggestionAuthor,
+            type: 'lesson',
+            title: '¡Tu lección fue aprobada automáticamente!',
+            content: `Tu lección "${lessonTitle}" ha sido aprobada automáticamente porque ${facilitator.name} ${facilitator.surname} aceptó ser el facilitador`,
+            link: `/lessons/${lessonId}`,
+            relatedId: lessonId,
+            relatedModel: 'Lesson',
+            from: facilitator._id,
+            priority: 'high'
+        };
+
+        const allNotifications = [...adminNotifications, authorNotification];
+        return await Notification.insertMany(allNotifications);
+    }
+
+    // 20. Notificación al líder cuando facilitador aprueba lección (NUEVO FLUJO AUTÓNOMO)
+    static async createFacilitatorApprovedLessonForLeaderNotification(facilitator, lessonId, lessonTitle, leaderId) {
+        console.log('=== createFacilitatorApprovedLessonForLeaderNotification ===');
+        console.log('Facilitator object:', facilitator);
+        console.log('Lesson ID:', lessonId);
+        console.log('Leader ID:', leaderId);
+        
+        const facilitatorId = facilitator._id || facilitator.sub || facilitator.id;
+        console.log('Resolved facilitator ID:', facilitatorId);
+        
+        return await Notification.createNotification({
+            user: leaderId,
+            type: 'lesson',
+            title: '¡Tu lección ha sido aprobada por el facilitador!',
+            content: `${facilitator.name} ${facilitator.surname} ha aprobado tu lección "${lessonTitle}". Ahora puedes gestionar la convocatoria y activar la lección cuando tengas suficientes participantes.`,
+            link: `/inicio/convocatorias?lesson=${lessonId}&action=manage`,
+            relatedId: lessonId,
+            relatedModel: 'Lesson',
+            from: facilitatorId,
+            priority: 'high'
+        });
+    }
+
+    // ===== FUNCIONES PARA EXPERIENCIAS =====
+
+    // 21. Notificación de experiencia enviada (al usuario)
+    static async createExperienceSubmittedNotification(experienceAuthor, experienceId, experienceTitle) {
+        return await Notification.createNotification({
+            user: experienceAuthor,
+            type: 'lesson',
+            title: 'Experiencia enviada para revisión',
+            content: `Tu experiencia "${experienceTitle}" se ha enviado correctamente y está siendo revisada por el administrador`,
+            link: `/inicio/lecciones`,
+            relatedId: experienceId,
+            relatedModel: 'Lesson',
+            from: experienceAuthor,
+            priority: 'medium'
+        });
+    }
+
+    // 22. Notificación a administradores de nueva experiencia
+    static async createNewExperiencePendingNotification(experienceAuthor, experienceId, experienceTitle, experienceType, adminUsers) {
+        const notificationData = {
+            type: 'lesson',
+            title: 'Nueva experiencia enviada',
+            content: `${experienceAuthor.name} ${experienceAuthor.surname} ha enviado una nueva experiencia "${experienceTitle}" de tipo ${experienceType}`,
+            link: `/admin/lecciones/experiencias`,
+            relatedId: experienceId,
+            relatedModel: 'Lesson',
+            from: experienceAuthor._id,
+            priority: 'medium'
+        };
+
+        const notifications = adminUsers.map(adminId => ({
+            user: adminId,
+            ...notificationData
+        }));
+
+        return await Notification.insertMany(notifications);
+    }
+
+    // 23. Notificación al facilitador sugerido para experiencia
+    static async createExperienceFacilitatorSuggestionNotification(experienceAuthor, facilitatorId, experienceId, experienceTitle) {
+        return await Notification.createNotification({
+            user: facilitatorId,
+            type: 'lesson',
+            title: 'Te han sugerido como facilitador de una experiencia',
+            content: `${experienceAuthor.name} ${experienceAuthor.surname} te ha sugerido como facilitador para la experiencia "${experienceTitle}". ¿Te interesa participar?`,
+            link: `/lessons/${experienceId}/facilitator-invitation`,
+            relatedId: experienceId,
+            relatedModel: 'Lesson',
+            from: experienceAuthor._id,
+            priority: 'high'
+        });
+    }
+
+    // 24. Notificación de experiencia aprobada
+    static async createExperienceApprovedNotification(experienceAuthor, experienceId, experienceTitle, approvedBy) {
+        return await Notification.createNotification({
+            user: experienceAuthor,
+            type: 'lesson',
+            title: '¡Tu experiencia fue aprobada!',
+            content: `Tu experiencia "${experienceTitle}" ha sido aprobada y ahora está visible en la red`,
+            link: `/lessons/${experienceId}`,
+            relatedId: experienceId,
+            relatedModel: 'Lesson',
+            from: approvedBy,
+            priority: 'high'
+        });
+    }
+
+    // 25. Notificación de experiencia rechazada
+    static async createExperienceRejectedNotification(experienceAuthor, experienceId, experienceTitle, rejectedBy, reason = '') {
+        const reasonText = reason ? ` Motivo: ${reason}` : '';
+        return await Notification.createNotification({
+            user: experienceAuthor,
+            type: 'lesson',
+            title: 'Tu experiencia necesita revisión',
+            content: `Tu experiencia "${experienceTitle}" necesita ser revisada.${reasonText}`,
+            link: `/lessons/${experienceId}`,
+            relatedId: experienceId,
+            relatedModel: 'Lesson',
+            from: rejectedBy,
+            priority: 'high'
+        });
+    }
     // ===== FUNCIONES ORIGINALES =====
 
     // Crear notificación de nueva lección

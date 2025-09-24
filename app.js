@@ -130,6 +130,8 @@ let lessonRoutes = require('./routes/lesson.routes');
 let userRoutes = require('./routes/user.routes');
 let errorReportRoutes = require('./routes/errorReports.routes');
 let notificationRoutes = require('./routes/notification.routes');
+let academicGroupRoutes = require('./routes/academicGroup.routes');
+let academicLessonRoutes = require('./routes/academicLesson.routes');
 
 // Middlewares
 app.use(express.urlencoded({ extended: false })); //Parse URL-encoded bodies
@@ -179,6 +181,8 @@ app.use('/api', lessonRoutes);
 app.use('/api', userRoutes);
 app.use('/api', errorReportRoutes); 
 app.use('/api', notificationRoutes);
+app.use('/api/academic-groups', academicGroupRoutes);
+app.use('/api/academic-lessons', academicLessonRoutes);
 
 // Rewrite url
 app.use('*', function(req, res, next){
