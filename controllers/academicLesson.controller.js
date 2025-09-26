@@ -25,36 +25,30 @@ exports.createLesson = async (req, res) => {
                 message: 'Grupo académico no encontrado'
             });
         }
+    
+        // Verificar permisos basado en membresía del grupo, no en el rol global
+        const isGroupStudent = group.students.some(sid => sid.toString() === authorId);
+        const isGroupTeacher = group.teacher && group.teacher.toString() === authorId;
+        const isAdmin = req.user.role === 'admin';
 
-        // Verificar permisos según el rol del usuario
-        if (req.user.role === 'student' || req.user.isStudent) {
-            // Si es estudiante, verificar que pertenece al grupo y tiene permisos
-            if (!group.students.some(sid => sid.toString() === authorId)) {
-                return res.status(403).json({
-                    status: 'error',
-                    message: 'No perteneces a este grupo académico'
-                });
-            }
-
-            // Verificar si el grupo permite que los estudiantes creen lecciones
-            if (!group.permissions.studentsCanCreateLessons) {
+        if (isGroupStudent) {
+            // El usuario es miembro estudiante del grupo: respetar permisos del grupo
+            const studentsCanCreate = (group.permissions && typeof group.permissions.studentsCanCreateLessons !== 'undefined')
+                ? group.permissions.studentsCanCreateLessons
+                : true; // Fallback permisivo
+            if (!studentsCanCreate) {
                 return res.status(403).json({
                     status: 'error',
                     message: 'No tienes permisos para crear lecciones en este grupo. Contacta al docente para habilitar esta funcionalidad.'
                 });
             }
-        } else if (req.user.role === 'teacher' || req.user.role === 'admin' || req.user.role === 'facilitator' || req.user.role === 'expert') {
-            // Si es docente/admin, verificar que es el docente del grupo o admin
-            if (group.teacher.toString() !== authorId && req.user.role !== 'admin') {
-                return res.status(403).json({
-                    status: 'error',
-                    message: 'No tienes permisos para crear lecciones en este grupo'
-                });
-            }
+        } else if (isGroupTeacher || isAdmin) {
+            // Docente del grupo o admin: permitido
         } else {
+            // No pertenece al grupo ni es docente/admin
             return res.status(403).json({
                 status: 'error',
-                message: 'No tienes permisos para crear lecciones académicas'
+                message: 'No tienes permisos para crear lecciones en este grupo. Debes pertenecer al grupo o ser su docente.'
             });
         }
 

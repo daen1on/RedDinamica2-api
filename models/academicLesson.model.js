@@ -113,37 +113,15 @@ const academicLessonSchema = new Schema({
         }
     },
     
-    // Nuevos campos requeridos
-    files: [{
-        name: {
-            type: String,
-            required: true
-        },
-        originalName: {
-            type: String,
-            required: true
-        },
-        path: {
-            type: String,
-            required: true
-        },
-        size: {
-            type: Number,
-            required: true
-        },
-        mimeType: {
-            type: String,
-            required: true
-        },
-        uploadedBy: {
-            type: Schema.ObjectId,
-            ref: 'User',
-            required: true
-        },
-        uploadedAt: {
-            type: Date,
-            default: Date.now
-        }
+    // Campos adicionales
+    tags: [{
+        type: String,
+        trim: true
+    }],
+
+    knowledge_areas: [{
+        type: String,
+        trim: true
     }],
     
     conversations: [{
@@ -189,8 +167,17 @@ const academicLessonSchema = new Schema({
     
     state: {
         type: String,
-        enum: ['proposed', 'assigned', 'development', 'test', 'completed'],
-        default: 'proposed'
+        enum: [
+            'draft',
+            'in_development',
+            'review_requested',
+            'under_review',
+            'approved',
+            'rejected',
+            'completed',
+            'ready_for_migration'
+        ],
+        default: 'draft'
     },
     
     development_group: [{
