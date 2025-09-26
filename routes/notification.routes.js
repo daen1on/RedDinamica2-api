@@ -5,6 +5,9 @@ const notificationController = require('../controllers/notification.controller')
 const authMiddleware = require('../middlewares/auth.middleware');
 const router = express.Router();
 
+// Crear nueva notificación
+router.post('/notifications', authMiddleware.ensureAuth, notificationController.createNotification);
+
 // Obtener notificaciones con paginación y filtros
 // GET /api/notifications?page=1&limit=10&unread=true&type=message
 router.get('/notifications', authMiddleware.ensureAuth, notificationController.getNotifications);

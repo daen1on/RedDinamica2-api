@@ -131,8 +131,32 @@ exports.deleteNotification = async (req, res) => {
     }
 };
 
+// Crear notificación via HTTP endpoint
+exports.createNotification = async (req, res) => {
+    try {
+        const notificationData = req.body;
+        
+        // Validar datos requeridos
+        if (!notificationData.user || !notificationData.type || !notificationData.title || !notificationData.content) {
+            return res.status(400).send({ 
+                message: 'Faltan campos requeridos: user, type, title, content' 
+            });
+        }
+
+        const notification = await Notification.createNotification(notificationData);
+        
+        return res.status(201).send({
+            message: 'Notificación creada correctamente',
+            notification: notification
+        });
+    } catch (err) {
+        console.error('Error creating notification:', err);
+        return res.status(500).send({ message: 'Error creando la notificación' });
+    }
+};
+
 // Crear notificación (función auxiliar para otros controladores)
-exports.createNotification = async (data) => {
+exports.createNotificationHelper = async (data) => {
     try {
         return await Notification.createNotification(data);
     } catch (err) {
