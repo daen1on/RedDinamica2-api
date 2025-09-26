@@ -898,7 +898,10 @@ const getCalls = async (req, res) => {
     const page = parseInt(req.query.page) || 1;
     try {
         const lessons = await Lesson.paginate(
-            { "call.visible": true }, 
+            { 
+                "call.visible": true,
+                state: { $nin: ['assigned', 'development', 'test', 'completed'] }
+            }, 
             { 
                 page, 
                 limit: ITEMS_PER_PAGE,
@@ -920,7 +923,10 @@ const getCalls = async (req, res) => {
 
 const getAllCalls = async (req, res) => {
     try {
-        const lessons = await Lesson.find({ "call.visible": true })
+        const lessons = await Lesson.find({ 
+                "call.visible": true,
+                state: { $nin: ['assigned', 'development', 'test', 'completed'] }
+            })
             .populate('author', 'name surname picture role _id')
             .populate('leader', 'name surname picture role _id')
             .populate('expert', 'name surname picture role _id')
@@ -1178,22 +1184,38 @@ const changeLessonState = async (req, res) => {
     }
 };
 
-// Crear convocatoria
+// Crear o actualizar convocatoria (solo líder/autor y en estado approved_by_expert)
 const createCall = async (req, res) => {
     const { id: lessonId } = req.params;
     const { text, visible = true } = req.body;
 
     try {
-        const lesson = await Lesson.findById(lessonId).populate('author');
+        const lesson = await Lesson.findById(lessonId)
+            .populate('author', 'name surname _id')
+            .populate('leader', 'name surname _id');
         if (!lesson) {
             return handleError(res, 'Lesson not found', 404);
+        }
+
+        // Permisos: solo líder o autor
+        const currentUserId = (req.user && (req.user.sub || req.user._id || req.user.id))?.toString();
+        const authorId = (lesson.author && lesson.author._id ? lesson.author._id : lesson.author)?.toString();
+        const leaderId = (lesson.leader && lesson.leader._id ? lesson.leader._id : lesson.leader)?.toString();
+        const isLeaderOrAuthor = currentUserId && (currentUserId === authorId || currentUserId === leaderId);
+        if (!isLeaderOrAuthor) {
+            return handleError(res, 'Only the project leader can open or edit the call', 403);
+        }
+
+        // Estado permitido: cuando el facilitador avaló (accepted=true) o cuando ya esté approved_by_expert
+        if (!(lesson.accepted === true || lesson.state === 'approved_by_expert')) {
+            return handleError(res, 'Call can only be opened after facilitator acceptance', 400);
         }
 
         // Actualizar la convocatoria
         lesson.call = {
             text,
             visible,
-            author: req.user.sub,
+            author: currentUserId,
             interested: lesson.call?.interested || [],
             created_at: new Date()
         };
@@ -1775,24 +1797,14 @@ const approveFacilitatorSuggestion = async (req, res) => {
             return handleError(res, 'Lesson must be in proposed state to approve', 400);
         }
 
-        // NUEVO FLUJO AUTÓNOMO:
-        // 1. Convertir suggested_facilitator en expert oficial y cambiar estado
+        // Nuevo flujo: el facilitador avala sin cambiar el estado; marcamos accepted=true
         lesson.expert = lesson.suggested_facilitator;
-        lesson.state = 'approved_by_expert';
+        lesson.accepted = true;
         lesson.approved_at = new Date();
+        // Mantener state en 'proposed'
+        lesson.state = 'proposed';
         lesson.leader = lesson.author._id;
         lesson.development_group = [lesson.author._id];
-        // 2. Crear convocatoria automáticamente
-        if (!lesson.call) {
-            lesson.call = {
-                text: `El facilitador ${req.user.name} ${req.user.surname} ha aprobado esta lección. ¡Únete a la convocatoria para participar en el desarrollo!`,
-                interested: [lesson.author._id], // El autor ya está interesado
-                visible: true,
-                author: lesson.author._id,
-                created_at: new Date()
-            };
-            console.log('Convocatoria creada automáticamente');
-        }
 
         await lesson.save();
 
@@ -1813,7 +1825,7 @@ const approveFacilitatorSuggestion = async (req, res) => {
                 user: adminId,
                 type: 'lesson',
                 title: 'Lección aprobada por facilitador (Flujo Autónomo)',
-                content: `La lección "${lesson.title}" ha sido aprobada por ${req.user.name} ${req.user.surname} y la convocatoria está abierta.`,
+                content: `La lección "${lesson.title}" ha sido aprobada por ${req.user.name} ${req.user.surname}. Ahora El líder debe abrir la convocatoria.`,
                 link: `/admin/lecciones?lesson=${lesson._id}&action=manage`,
                 relatedId: lesson._id,
                 relatedModel: 'Lesson',
@@ -1824,15 +1836,15 @@ const approveFacilitatorSuggestion = async (req, res) => {
             await Notification.insertMany(adminNotifications);
         }
 
-        console.log('✅ FLUJO AUTÓNOMO COMPLETADO:');
-        console.log('- Estado cambiado a:', lesson.state);
-        console.log('- Convocatoria creada automáticamente');
-        console.log('- Líder notificado para gestionar participantes');
+        console.log('✅ FACILITADOR AVALÓ LA LECCIÓN:');
+        console.log('- accepted:', lesson.accepted);
+        console.log('- state:', lesson.state);
+        console.log('- Líder notificado para gestionar convocatoria');
 
         res.status(200).send({ 
-            message: 'Lesson approved successfully and call created automatically',
+            message: 'Lesson accepted by facilitator',
             lesson: lesson,
-            autonomousFlow: true
+            acceptedFlow: true
         });
 
     } catch (err) {
@@ -1845,9 +1857,13 @@ const rejectFacilitatorSuggestion = async (req, res) => {
     try {
         const { lessonId } = req.params;
         const { reason } = req.body;
-        const facilitatorId = req.user._id;
+        const facilitatorId = (req.user && (req.user._id || req.user.sub || req.user.id)) || null;
 
         console.log('rejectFacilitatorSuggestion called:', { lessonId, facilitatorId, reason });
+
+        if (!facilitatorId) {
+            return handleError(res, 'User not authenticated correctly', 401);
+        }
 
         // Buscar la lección
         const lesson = await Lesson.findById(lessonId);
@@ -1855,8 +1871,16 @@ const rejectFacilitatorSuggestion = async (req, res) => {
             return handleError(res, 'Lesson not found', 404);
         }
 
+        if (!lesson.suggested_facilitator) {
+            return handleError(res, 'No suggested facilitator for this lesson', 400);
+        }
+
+        const suggestedFacilitatorId = (lesson.suggested_facilitator && lesson.suggested_facilitator._id)
+            ? lesson.suggested_facilitator._id
+            : lesson.suggested_facilitator;
+
         // Verificar que el usuario sea el facilitador sugerido
-        if (lesson.suggested_facilitator.toString() !== facilitatorId.toString()) {
+        if (!suggestedFacilitatorId || suggestedFacilitatorId.toString() !== facilitatorId.toString()) {
             return handleError(res, 'You are not the suggested facilitator for this lesson', 403);
         }
 
@@ -1868,14 +1892,18 @@ const rejectFacilitatorSuggestion = async (req, res) => {
 
         await lesson.save();
 
-        // Notificar al autor que el facilitador rechazó
-        await NotificationService.createNotification({
-            user: lesson.author,
-            type: 'lesson',
-            title: 'Tu experiencia necesita un nuevo facilitador',
-            content: `El facilitador ha rechazado tu experiencia "${lesson.title}". Motivo: ${lesson.rejection_reason}. Por favor, selecciona un nuevo facilitador.`,
-            lesson: lessonId
-        });
+        // Notificar al autor que el facilitador rechazó (no bloquear por errores de notificación)
+        try {
+            await NotificationService.createNotification({
+                user: lesson.author,
+                type: 'lesson',
+                title: 'Tu experiencia necesita un nuevo facilitador',
+                content: `El facilitador ha rechazado tu experiencia "${lesson.title}". Motivo: ${lesson.rejection_reason}. Por favor, selecciona un nuevo facilitador.`,
+                lesson: lessonId
+            });
+        } catch (notificationError) {
+            console.error('Error creating facilitator rejection notification:', notificationError);
+        }
 
         console.log('Facilitator rejected lesson successfully:', lessonId);
         res.status(200).send({ 

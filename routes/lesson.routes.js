@@ -38,7 +38,7 @@ api.get('/all-lessons-to-advise', auth.ensureAuth, lessonController.getAllLesson
 api.get('/suggest-lessons/:page?', auth.ensureAuth, lessonController.getSuggestLessons);
 api.get('/experiences/:page?', auth.ensureAuth, lessonController.getExperiences);
 api.get('/calls/:page?', lessonController.getCalls);
-api.get('/all-calls', lessonController.getCalls);
+api.get('/all-calls', lessonController.getAllCalls);
 
 // ===== NUEVAS RUTAS PARA NOTIFICACIONES =====
 
