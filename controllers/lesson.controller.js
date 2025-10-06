@@ -57,25 +57,12 @@ const saveLesson = async (req, res) => {
                     lessonStored.title
                 );
 
-                // 2. Obtener administradores y administradores delegados
-                const adminUsers = await User.find({
-                    $or: [
-                        { role: 'admin' },
-                        { role: 'delegated_admin' }
-                    ]
-                }).select('_id');
-
-                const adminIds = adminUsers.map(admin => admin._id);
-
-                // 3. Notificar a administradores sobre nueva sugerencia
-                if (adminIds.length > 0) {
-                    await NotificationService.createNewLessonSuggestionNotification(
-                        suggestionAuthor,
-                        lessonStored._id,
-                        lessonStored.title,
-                        adminIds
-                    );
-                }
+                // 2. Notificar a administradores y gestores de lecciones sobre nueva sugerencia
+                await NotificationService.createNewTaskNotificationForManagers(
+                    'new_suggestion',
+                    { lessonTitle: lessonStored.title },
+                    suggestionAuthor
+                );
 
                 // 4. Si hay un facilitador sugerido, notificarle
                 if (lessonStored.suggested_facilitator) {
@@ -183,6 +170,16 @@ const deleteLesson = async (req, res) => {
         if (!lessonRemoved) {
             return handleError(res, 'Lesson not found', 404);
         }
+        
+        // Si la lección eliminada tiene versión > 1, limpiar son_lesson del padre
+        if (lessonRemoved.version && lessonRemoved.version > 1 && lessonRemoved.father_lesson) {
+            console.log(`Limpiando son_lesson del padre (${lessonRemoved.father_lesson}) porque se eliminó versión ${lessonRemoved.version}`);
+            await Lesson.findByIdAndUpdate(
+                lessonRemoved.father_lesson,
+                { $unset: { son_lesson: "" } }
+            );
+        }
+        
         await Comment.deleteMany({ _id: { $in: lessonRemoved.comments } });
         return res.status(200).send({ lesson: lessonRemoved });
     } catch (err) {
@@ -318,7 +315,12 @@ const updateLesson = async (req, res) => {
         // Populate después de la actualización para evitar errores
         try {
             console.log("Attempting to populate lesson data...");
-            lessonUpdated = await Lesson.findById(lessonId).populate(populateLesson());
+            lessonUpdated = await Lesson.findById(lessonId)
+                .populate(populateLesson())
+                .populate({
+                    path: 'comments',
+                    populate: { path: 'user', select: 'name surname picture role _id' }
+                });
             console.log("Lesson populated successfully");
         } catch (populateError) {
             console.error("Error populating lesson, using basic data:", populateError);
@@ -807,11 +809,12 @@ const getLessonsToAdvise = async (req, res) => {
             $or: [
                 { 
                     suggested_facilitator: userId,
-                    state: 'proposed'
+                    state: 'proposed',
+                    accepted: false
                 },
                 {
                     expert: userId,
-                    state: { $in: ['approved_by_expert', 'assigned', 'development', 'test', 'completed', 'rejected_by_expert'] }
+                    state: { $in: ['assigned', 'development', 'test', 'completed'] }
                 }
             ]
         };
@@ -863,7 +866,7 @@ const getAllLessonsToAdvise = async (req, res) => {
                 },
                 {
                     expert: userId,
-                    state: { $in: ['approved_by_expert', 'assigned', 'development', 'test', 'completed', 'rejected_by_expert'] }
+                    state: { $in: ['assigned', 'development', 'test', 'completed'] }
                 }
             ]
         };
@@ -897,11 +900,25 @@ const getSuggestLessons = async (req, res) => {
 const getCalls = async (req, res) => {
     const page = parseInt(req.query.page) || 1;
     try {
+        // Identificar usuario solicitante
+        const userId = (req.user && (req.user._id || req.user.sub || req.user.id)) || null;
+
+        // Filtro base por estados (excluir las activas/en desarrollo)
+        const stateFilter = { state: { $nin: ['assigned', 'development', 'test', 'completed'] } };
+        console.log('stateFilter:', stateFilter);
+        console.log('userId:', userId);
+        // Visibilidad: todos los visibles para cualquiera; y además incluir no visibles si el solicitante es el líder
+        const visibilityFilter = userId
+            ? { $or: [
+                    { "call.visible": true },
+                    { $and: [ { "call.visible": false }, { leader: userId } ] }
+                ] }
+            : { "call.visible": true };
+        console.log('visibilityFilter:', visibilityFilter);
+        const query = { $and: [ stateFilter, visibilityFilter ] };
+
         const lessons = await Lesson.paginate(
-            { 
-                "call.visible": true,
-                state: { $nin: ['assigned', 'development', 'test', 'completed'] }
-            }, 
+            query,
             { 
                 page, 
                 limit: ITEMS_PER_PAGE,
@@ -923,10 +940,15 @@ const getCalls = async (req, res) => {
 
 const getAllCalls = async (req, res) => {
     try {
-        const lessons = await Lesson.find({ 
-                "call.visible": true,
-                state: { $nin: ['assigned', 'development', 'test', 'completed'] }
-            })
+        const userId = (req.user && (req.user._id || req.user.sub || req.user.id)) || null;
+        const stateFilter = { state: { $nin: ['assigned', 'development', 'test', 'completed'] } };
+        const visibilityFilter = userId
+            ? { $or: [ { "call.visible": true }, { $and: [ { "call.visible": false }, { leader: userId } ] } ] }
+            : { "call.visible": true };
+
+        const query = { $and: [ stateFilter, visibilityFilter ] };
+
+        const lessons = await Lesson.find(query)
             .populate('author', 'name surname picture role _id')
             .populate('leader', 'name surname picture role _id')
             .populate('expert', 'name surname picture role _id')
@@ -976,8 +998,21 @@ async function populateLessonWithCall(lessonQuery) {
         console.log('=== populateLessonWithCall DEBUG ===');
         const lesson = await lessonQuery
             .populate(populateLesson())
+            // Popular comentarios de la lección y sus usuarios para vistas que dependen de ellos (e.g., rating)
+            .populate({
+                path: 'comments',
+                populate: { path: 'user', select: 'name surname picture role _id' }
+            })
             .populate({
                 path: 'call.interested',
+                select: 'name surname picture role _id'
+            })
+            .populate({
+                path: 'conversations.author',
+                select: 'name surname picture role _id'
+            })
+            .populate({
+                path: 'expert_comments.author',
                 select: 'name surname picture role _id'
             });
         
@@ -986,6 +1021,8 @@ async function populateLessonWithCall(lessonQuery) {
         console.log('populateLessonWithCall - suggested_facilitator:', lesson.suggested_facilitator);
         console.log('populateLessonWithCall - author:', lesson.author);
         console.log('populateLessonWithCall - development_group populated:', lesson.development_group?.length || 0);
+        console.log('populateLessonWithCall - conversations authors populated:', Array.isArray(lesson.conversations) ? lesson.conversations.filter(m=>m.author && m.author.name).length : 0);
+        console.log('populateLessonWithCall - expert_comments authors populated:', Array.isArray(lesson.expert_comments) ? lesson.expert_comments.filter(m=>m.author && m.author.name).length : 0);
         console.log('populateLessonWithCall - populate config used:', populateLesson());
         
         return lesson;
@@ -1104,7 +1141,8 @@ const addLessonMessage = async (req, res) => {
             file: file || null
         };
 
-        // Añadir mensaje a la lección
+        // Añadir mensaje a la lección (si es conversación del grupo) o a expert_comments si el autor es el experto y conversationTitle coincide con uno de experto
+        // Por simplicidad mantenemos en conversations cuando viene de conversación general; expert usa expert_comments desde front
         lesson.conversations.push(newMessage);
         const updatedLesson = await lesson.save();
 
@@ -1138,6 +1176,130 @@ const addLessonMessage = async (req, res) => {
     }
 };
 
+// Editar mensaje existente (solo dentro de 30 minutos)
+const EDIT_WINDOW_MINUTES = 30;
+const editLessonMessage = async (req, res) => {
+    const { id: lessonId, messageId } = req.params;
+    const { text, scope } = req.body; // scope: 'conversations' | 'expert_comments'
+
+    try {
+        const lesson = await Lesson.findById(lessonId);
+        if (!lesson) return handleError(res, 'Lesson not found', 404);
+
+        const collection = scope === 'expert_comments' ? lesson.expert_comments : lesson.conversations;
+        const message = collection.id(messageId) || collection.find(m => m._id.toString() === messageId.toString());
+        if (!message) return handleError(res, 'Message not found', 404);
+
+        // Permitir solo autor del mensaje
+        if (message.author.toString() !== req.user.sub.toString()) {
+            return handleError(res, 'Forbidden', 403);
+        }
+
+        // Validar ventana de edición
+        const createdAt = new Date(message.created_at);
+        const now = new Date();
+        const diffMinutes = (now.getTime() - createdAt.getTime()) / (1000 * 60);
+        if (diffMinutes > EDIT_WINDOW_MINUTES) {
+            return handleError(res, 'Edit window expired', 400);
+        }
+
+        message.text = text;
+        message.edited = true;
+        message.edited_at = new Date();
+
+        const updatedLesson = await lesson.save();
+
+        // Notificar a participantes sobre edición (opcional)
+        try {
+            const participants = new Set();
+            if (lesson.author) participants.add(lesson.author.toString());
+            if (lesson.leader) participants.add(lesson.leader.toString());
+            if (lesson.expert) participants.add(lesson.expert.toString());
+            if (lesson.development_group) {
+                lesson.development_group.forEach(u => participants.add(u.toString()));
+            }
+            participants.delete(req.user.sub.toString());
+            if (participants.size > 0) {
+                await NotificationService.createLessonMessageNotification(
+                    req.user,
+                    Array.from(participants),
+                    lesson._id,
+                    lesson.title,
+                    '[mensaje editado] ' + (text || '')
+                );
+            }
+        } catch (notifyErr) {
+            console.error('Error creating edit notification:', notifyErr);
+        }
+
+        // Devolver poblado
+        const populated = await populateLessonWithCall(Lesson.findById(updatedLesson._id));
+        return res.status(200).send({ lesson: populated });
+    } catch (err) {
+        console.error('Error editing lesson message:', err);
+        return handleError(res, 'Error editing message');
+    }
+};
+
+// Agregar comentario de experto/facilitador con notificaciones
+const addExpertComment = async (req, res) => {
+    const { id: lessonId } = req.params;
+    const { text, conversationTitle, file } = req.body;
+
+    try {
+        const lesson = await Lesson.findById(lessonId).populate('author leader expert development_group');
+        if (!lesson) {
+            return handleError(res, 'Lesson not found', 404);
+        }
+
+        // Crear el nuevo comentario de experto
+        const newComment = {
+            text,
+            author: req.user.sub,
+            conversationTitle: conversationTitle || 'General',
+            created_at: new Date(),
+            file: file || null
+        };
+
+        // Añadir comentario a expert_comments
+        lesson.expert_comments.push(newComment);
+        const updatedLesson = await lesson.save();
+
+        // Obtener todos los participantes de la lección (excepto el facilitador que escribe)
+        const participants = new Set();
+        if (lesson.author) participants.add(lesson.author._id.toString());
+        if (lesson.leader) participants.add(lesson.leader._id.toString());
+        if (lesson.expert && lesson.expert._id.toString() !== req.user.sub.toString()) {
+            participants.add(lesson.expert._id.toString());
+        }
+        if (lesson.development_group) {
+            lesson.development_group.forEach(member => participants.add(member._id.toString()));
+        }
+
+        // Filtrar al usuario actual
+        const participantIds = Array.from(participants).filter(id => id !== req.user.sub.toString());
+
+        // Crear notificaciones
+        if (participantIds.length > 0) {
+            await NotificationService.createLessonMessageNotification(
+                req.user,
+                participantIds,
+                lesson._id,
+                lesson.title,
+                text
+            ).catch(err => console.error('Error creating expert comment notification:', err));
+        }
+
+        // Poblar la lección actualizada para la respuesta
+        await updatedLesson.populate('author leader expert development_group');
+        
+        return res.status(200).send({ lesson: updatedLesson });
+    } catch (err) {
+        console.error('Error adding expert comment:', err);
+        return handleError(res, 'Error adding expert comment');
+    }
+};
+
 // Cambiar estado de lección
 const changeLessonState = async (req, res) => {
     const { id: lessonId } = req.params;
@@ -1168,12 +1330,13 @@ const changeLessonState = async (req, res) => {
         // Crear notificaciones de cambio de estado
         if (participantIds.length > 0 && oldState !== state) {
             await NotificationService.createLessonStateChangeNotification(
+                req.user,
                 participantIds,
                 lesson._id,
                 lesson.title,
                 oldState,
                 state,
-                req.user.sub
+                reason
             ).catch(err => console.error('Error creating lesson state change notification:', err));
         }
 
@@ -1305,31 +1468,35 @@ const getUserPublicLessons = async (req, res) => {
             });
         }
 
-        // Construir query base para lecciones
+        // Determinar si el solicitante es el propietario del perfil
+        const isOwner = req.user && req.user.sub === userId;
+
+        // Construir query base por participación del usuario
         let query = {
             $or: [
                 { author: userId },
                 { leader: userId },
                 { expert: userId },
                 { development_group: userId }
-            ],
-            state: 'completed', // Solo lecciones completadas
-            visible: true, // Solo lecciones visibles
-            accepted: true, // Solo lecciones aceptadas
-            _id: { $nin: privacySettings.hiddenLessonIds } // Excluir lecciones ocultas
+            ]
         };
 
-        // Aplicar filtros adicionales
-        if (area) {
-            query.knowledge_area = area;
-        }
-
-        // Si no es el propietario del perfil, aplicar filtros de privacidad adicionales
-        const isOwner = req.user && req.user.sub === userId;
+        // Filtros por estado/visibilidad según sea propietario o visitante
         if (!isOwner) {
-            // Los visitantes solo ven lecciones completadas y públicas
+            // Visitantes: solo completadas, públicas, aceptadas y no ocultas por privacidad
             query.state = 'completed';
             query.visible = true;
+            query.accepted = true;
+            query._id = { $nin: privacySettings.hiddenLessonIds };
+        } else {
+            // Propietario: permitir ver ocultas y no restringir por visible; mantener completadas/aceptadas
+            query.state = 'completed';
+            query.accepted = true;
+        }
+
+        // Aplicar filtro por área si se envía
+        if (area) {
+            query.knowledge_area = area;
         }
 
         // Paginar resultados
@@ -1865,37 +2032,111 @@ const rejectFacilitatorSuggestion = async (req, res) => {
             return handleError(res, 'User not authenticated correctly', 401);
         }
 
-        // Buscar la lección
-        const lesson = await Lesson.findById(lessonId);
+        // Buscar la lección con populate para notificaciones
+        const lesson = await Lesson.findById(lessonId).populate('author', 'name surname email');
         if (!lesson) {
             return handleError(res, 'Lesson not found', 404);
         }
 
-        if (!lesson.suggested_facilitator) {
-            return handleError(res, 'No suggested facilitator for this lesson', 400);
-        }
-
+        // Verificar que el usuario sea el facilitador (puede estar en suggested_facilitator o expert)
         const suggestedFacilitatorId = (lesson.suggested_facilitator && lesson.suggested_facilitator._id)
             ? lesson.suggested_facilitator._id
             : lesson.suggested_facilitator;
+        const expertId = (lesson.expert && lesson.expert._id)
+            ? lesson.expert._id
+            : lesson.expert;
 
-        // Verificar que el usuario sea el facilitador sugerido
-        if (!suggestedFacilitatorId || suggestedFacilitatorId.toString() !== facilitatorId.toString()) {
-            return handleError(res, 'You are not the suggested facilitator for this lesson', 403);
+        const isSuggestedFacilitator = suggestedFacilitatorId && suggestedFacilitatorId.toString() === facilitatorId.toString();
+        const isExpert = expertId && expertId.toString() === facilitatorId.toString();
+
+        if (!isSuggestedFacilitator && !isExpert) {
+            return handleError(res, 'You are not the facilitator for this lesson', 403);
         }
 
-        // Actualizar la lección: remover facilitador sugerido y cambiar estado
+        // Obtener información del facilitador para notificaciones
+        const facilitator = await User.findById(facilitatorId).select('name surname email');
+
+        // CASO 1: Lección ya aceptada (accepted=true) - Solo retirarse y notificar al admin
+        if (lesson.accepted === true) {
+            console.log('Lección ya aceptada - Facilitador se retira y se notifica al admin');
+            
+            // Remover al facilitador de la lección
+            lesson.expert = null;
+            lesson.suggested_facilitator = null;
+            lesson.rejection_reason = reason || 'El facilitador se retiró de la lección';
+            lesson.rejected_at = new Date();
+            // NO cambiar el estado - mantener 'proposed' para que admin pueda reasignar
+
+            await lesson.save();
+
+            // Notificar a administradores y gestores de lecciones
+            try {
+                const adminUsers = await User.find({
+                    $or: [
+                        { role: 'admin' },
+                        { role: 'delegated_admin' },
+                        { role: 'lesson_manager' }
+                    ]
+                }).select('_id');
+
+                const adminIds = adminUsers.map(admin => admin._id);
+
+                if (adminIds.length > 0) {
+                    const adminNotifications = adminIds.map(adminId => ({
+                        user: adminId,
+                        type: 'lesson',
+                        title: 'Facilitador se retiró de lección aceptada',
+                        content: `${facilitator.name} ${facilitator.surname} se retiró de la lección "${lesson.title}". Motivo: ${lesson.rejection_reason}. Se requiere asignar un nuevo facilitador.`,
+                        link: `/admin/lecciones?lesson=${lesson._id}`,
+                        relatedId: lesson._id,
+                        relatedModel: 'Lesson',
+                        from: facilitatorId,
+                        priority: 'high'
+                    }));
+
+                    await Notification.insertMany(adminNotifications);
+                    console.log('Notificaciones enviadas a administradores sobre retiro de facilitador');
+                }
+            } catch (notificationError) {
+                console.error('Error creating admin notification:', notificationError);
+            }
+
+            // Notificar al autor también
+            try {
+                await NotificationService.createNotification({
+                    user: lesson.author._id,
+                    type: 'lesson',
+                    title: 'El facilitador se retiró de tu lección',
+                    content: `${facilitator.name} ${facilitator.surname} se retiró de tu lección "${lesson.title}". Un administrador asignará un nuevo facilitador pronto.`,
+                    lesson: lessonId
+                });
+            } catch (notificationError) {
+                console.error('Error creating author notification:', notificationError);
+            }
+
+            console.log('Facilitator withdrawn from accepted lesson:', lessonId);
+            return res.status(200).send({ 
+                message: 'Te has retirado de la lección. Un administrador asignará un nuevo facilitador.',
+                lesson: lesson,
+                withdrawn: true
+            });
+        }
+
+        // CASO 2: Lección NO aceptada aún - Rechazo completo
+        console.log('Lección no aceptada - Rechazo completo');
+        
         lesson.suggested_facilitator = null;
-        lesson.state = 'rejected_by_facilitator'; // Nuevo estado
+        lesson.expert = null;
+        lesson.state = 'rejected_by_facilitator';
         lesson.rejection_reason = reason || 'No reason provided';
         lesson.rejected_at = new Date();
 
         await lesson.save();
 
-        // Notificar al autor que el facilitador rechazó (no bloquear por errores de notificación)
+        // Notificar al autor que el facilitador rechazó
         try {
             await NotificationService.createNotification({
-                user: lesson.author,
+                user: lesson.author._id,
                 type: 'lesson',
                 title: 'Tu experiencia necesita un nuevo facilitador',
                 content: `El facilitador ha rechazado tu experiencia "${lesson.title}". Motivo: ${lesson.rejection_reason}. Por favor, selecciona un nuevo facilitador.`,
@@ -1908,7 +2149,8 @@ const rejectFacilitatorSuggestion = async (req, res) => {
         console.log('Facilitator rejected lesson successfully:', lessonId);
         res.status(200).send({ 
             message: 'Lesson rejected successfully',
-            lesson: lesson
+            lesson: lesson,
+            withdrawn: false
         });
 
     } catch (err) {
@@ -1940,6 +2182,8 @@ module.exports = {
     testEndpoint,
     // Funciones para notificaciones
     addLessonMessage,
+    editLessonMessage,
+    addExpertComment,
     changeLessonState,
     createCall,
     showInterestInCall,

@@ -24,6 +24,7 @@ let Follow = require('../models/follow.model');
 let Publication = require('../models/publication.model');
 const Institution = require('../models/institution.model'); 
 const Profession = require('../models/profession.model'); 
+const Lesson = require('../models/lesson.model');
 
 // Constant
 const { ITEMS_PER_PAGE } = require('../config');
@@ -611,11 +612,32 @@ const getCountFollow = async (userId) => {
         const following = await Follow.countDocuments({ user: userId });
         const followed = await Follow.countDocuments({ followed: userId });
         const publications = await Publication.countDocuments({ user: userId });
+        
+        // Contar lecciones en las que el usuario ha participado
+        // Criterios:
+        // - author: solo si tiene grupo de desarrollo, líder o experto asignado (consistencia con "Mis Lecciones")
+        // - leader, expert o miembro del development_group
+        const lessons = await Lesson.countDocuments({
+            $or: [
+                {
+                    author: userId,
+                    $or: [
+                        { development_group: { $exists: true, $ne: [], $not: { $size: 0 } } },
+                        { leader: { $exists: true, $ne: null } },
+                        { expert: { $exists: true, $ne: null } }
+                    ]
+                },
+                { leader: userId },
+                { expert: userId },
+                { development_group: { $in: [userId] } }
+            ]
+        });
 
         return {
             following: following,
             followed: followed,
-            publications: publications
+            publications: publications,
+            lessons: lessons
         }
     } catch (err) {
         return handleError(err);
