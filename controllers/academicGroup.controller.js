@@ -3,9 +3,37 @@
 const AcademicGroup = require('../models/academicGroup.model');
 const User = require('../models/user.model');
 const AcademicLesson = require('../models/academicLesson.model');
+const Resource = require('../models/resource.model');
 const bcrypt = require('bcryptjs');
 const { v4: uuidv4 } = require('uuid');
 const mail = require('../services/mail.service');
+
+// Listar todos los grupos (solo admin o lesson_manager). Soporta filtro active=true
+exports.getAllGroups = async (req, res) => {
+    try {
+        const role = req.user.role;
+        if (role !== 'admin' && role !== 'lesson_manager') {
+            return res.status(403).json({ status: 'error', message: 'No tienes permisos para listar todos los grupos' });
+        }
+
+        const { active } = req.query;
+        const filter = {};
+        if (typeof active !== 'undefined') {
+            const isActive = String(active).toLowerCase() === 'true';
+            filter.isActive = isActive;
+        }
+
+        const groups = await AcademicGroup.find(filter)
+            .populate('teacher', 'name surname email avatar')
+            .populate('students', 'name surname email avatar')
+            .sort({ createdAt: -1 });
+
+        return res.status(200).json({ status: 'success', data: groups });
+    } catch (error) {
+        console.error('Error al listar grupos académicos:', error);
+        return res.status(500).json({ status: 'error', message: 'Error interno del servidor' });
+    }
+};
 
 // Crear un nuevo grupo académico
 exports.createGroup = async (req, res) => {
@@ -675,5 +703,191 @@ exports.canStudentCreateLessons = async (req, res) => {
             status: 'error',
             message: 'Error interno del servidor'
         });
+    }
+};
+
+// =====================
+// Discusión del Grupo
+// =====================
+
+// Obtener discusión del grupo
+exports.getDiscussion = async (req, res) => {
+    try {
+        const { groupId } = req.params;
+        const userId = req.user.sub || req.user.id;
+
+        const group = await AcademicGroup.findById(groupId)
+            .populate('discussion.author', 'name surname email avatar');
+        if (!group) {
+            return res.status(404).json({ status: 'error', message: 'Grupo académico no encontrado' });
+        }
+
+        // Solo miembros del grupo, docente o admin pueden ver
+        const isMember = group.teacher.toString() === userId || group.students.some(s => s.toString() === userId) || req.user.role === 'admin';
+        if (!isMember) {
+            return res.status(403).json({ status: 'error', message: 'No tienes permisos para ver esta discusión' });
+        }
+
+        return res.status(200).json({ status: 'success', data: group.discussion || [] });
+    } catch (error) {
+        console.error('Error al obtener discusión del grupo:', error);
+        return res.status(500).json({ status: 'error', message: 'Error interno del servidor' });
+    }
+};
+
+// Agregar mensaje de discusión
+exports.addDiscussionMessage = async (req, res) => {
+    try {
+        const { groupId } = req.params;
+        const { content } = req.body;
+        const userId = req.user.sub || req.user.id;
+
+        if (!content || !content.trim()) {
+            return res.status(400).json({ status: 'error', message: 'Contenido requerido' });
+        }
+
+        const group = await AcademicGroup.findById(groupId);
+        if (!group) {
+            return res.status(404).json({ status: 'error', message: 'Grupo académico no encontrado' });
+        }
+
+        // Solo miembros del grupo, docente o admin pueden publicar
+        const isMember = group.teacher.toString() === userId || group.students.some(s => s.toString() === userId) || req.user.role === 'admin';
+        if (!isMember) {
+            return res.status(403).json({ status: 'error', message: 'No tienes permisos para publicar en esta discusión' });
+        }
+
+        group.discussion.push({ content: content.trim(), author: userId });
+        await group.save();
+        await group.populate('discussion.author', 'name surname email avatar');
+
+        return res.status(201).json({ status: 'success', message: 'Mensaje agregado', data: group.discussion });
+    } catch (error) {
+        console.error('Error al agregar mensaje a discusión:', error);
+        return res.status(500).json({ status: 'error', message: 'Error interno del servidor' });
+    }
+};
+
+// Eliminar mensaje de discusión (docente, admin o autor)
+exports.deleteDiscussionMessage = async (req, res) => {
+    try {
+        const { groupId, messageId } = req.params;
+        const userId = req.user.sub || req.user.id;
+
+        const group = await AcademicGroup.findById(groupId);
+        if (!group) {
+            return res.status(404).json({ status: 'error', message: 'Grupo académico no encontrado' });
+        }
+
+        const msgIndex = group.discussion.findIndex(m => m._id.toString() === messageId);
+        if (msgIndex === -1) {
+            return res.status(404).json({ status: 'error', message: 'Mensaje no encontrado' });
+        }
+
+        const message = group.discussion[msgIndex];
+        const isTeacher = group.teacher.toString() === userId;
+        const isAdmin = req.user.role === 'admin';
+        const isAuthor = message.author.toString() === userId;
+        if (!isTeacher && !isAdmin && !isAuthor) {
+            return res.status(403).json({ status: 'error', message: 'No tienes permisos para eliminar este mensaje' });
+        }
+
+        group.discussion.splice(msgIndex, 1);
+        await group.save();
+        return res.status(200).json({ status: 'success', message: 'Mensaje eliminado' });
+    } catch (error) {
+        console.error('Error al eliminar mensaje de discusión:', error);
+        return res.status(500).json({ status: 'error', message: 'Error interno del servidor' });
+    }
+};
+
+// =====================
+// Recursos del Grupo
+// =====================
+
+// Listar recursos del grupo
+exports.getGroupResources = async (req, res) => {
+    try {
+        const { groupId } = req.params;
+        const userId = req.user.sub || req.user.id;
+
+        const group = await AcademicGroup.findById(groupId).populate({
+            path: 'resources',
+            populate: { path: 'author', select: 'name surname email' }
+        });
+        if (!group) {
+            return res.status(404).json({ status: 'error', message: 'Grupo académico no encontrado' });
+        }
+
+        // Solo miembros del grupo, docente o admin pueden ver
+        const isMember = group.teacher.toString() === userId || group.students.some(s => s.toString() === userId) || req.user.role === 'admin';
+        if (!isMember) {
+            return res.status(403).json({ status: 'error', message: 'No tienes permisos para ver estos recursos' });
+        }
+
+        return res.status(200).json({ status: 'success', data: group.resources || [] });
+    } catch (error) {
+        console.error('Error al obtener recursos del grupo:', error);
+        return res.status(500).json({ status: 'error', message: 'Error interno del servidor' });
+    }
+};
+
+// Agregar (importar) recurso existente al grupo (solo docente o admin)
+exports.addGroupResource = async (req, res) => {
+    try {
+        const { groupId } = req.params;
+        const { resourceId } = req.body;
+        const userId = req.user.sub || req.user.id;
+
+        const group = await AcademicGroup.findById(groupId);
+        if (!group) {
+            return res.status(404).json({ status: 'error', message: 'Grupo académico no encontrado' });
+        }
+
+        if (group.teacher.toString() !== userId && req.user.role !== 'admin') {
+            return res.status(403).json({ status: 'error', message: 'No tienes permisos para modificar recursos del grupo' });
+        }
+
+        const resource = await Resource.findById(resourceId);
+        if (!resource) {
+            return res.status(404).json({ status: 'error', message: 'Recurso no encontrado' });
+        }
+
+        // Evitar duplicados
+        const already = group.resources.some(rid => rid.toString() === resourceId);
+        if (!already) {
+            group.resources.push(resourceId);
+            await group.save();
+        }
+
+        await group.populate({ path: 'resources', populate: { path: 'author', select: 'name surname email' } });
+        return res.status(200).json({ status: 'success', message: 'Recurso agregado al grupo', data: group.resources });
+    } catch (error) {
+        console.error('Error al agregar recurso al grupo:', error);
+        return res.status(500).json({ status: 'error', message: 'Error interno del servidor' });
+    }
+};
+
+// Remover recurso del grupo (solo docente o admin)
+exports.removeGroupResource = async (req, res) => {
+    try {
+        const { groupId, resourceId } = req.params;
+        const userId = req.user.sub || req.user.id;
+
+        const group = await AcademicGroup.findById(groupId);
+        if (!group) {
+            return res.status(404).json({ status: 'error', message: 'Grupo académico no encontrado' });
+        }
+
+        if (group.teacher.toString() !== userId && req.user.role !== 'admin') {
+            return res.status(403).json({ status: 'error', message: 'No tienes permisos para modificar recursos del grupo' });
+        }
+
+        group.resources = group.resources.filter(rid => rid.toString() !== resourceId);
+        await group.save();
+        return res.status(200).json({ status: 'success', message: 'Recurso removido del grupo' });
+    } catch (error) {
+        console.error('Error al remover recurso del grupo:', error);
+        return res.status(500).json({ status: 'error', message: 'Error interno del servidor' });
     }
 };

@@ -8,6 +8,9 @@ const authMiddleware = require('../middlewares/auth.middleware');
 // Todas las rutas requieren autenticación
 router.use(authMiddleware.ensureAuth);
 
+// Listado global (solo admin / lesson_manager)
+router.get('/', academicGroupController.getAllGroups);
+
 // Rutas para docentes
 router.post('/', academicGroupController.createGroup);
 router.get('/teacher', academicGroupController.getTeacherGroups);
@@ -31,5 +34,15 @@ router.get('/:groupId/statistics', academicGroupController.getGroupStatistics);
 // Permisos del grupo
 router.put('/:groupId/permissions', academicGroupController.updateGroupPermissions);
 router.get('/:groupId/can-create-lessons', academicGroupController.canStudentCreateLessons);
+
+// Discusión del grupo
+router.get('/:groupId/discussion', academicGroupController.getDiscussion);
+router.post('/:groupId/discussion', academicGroupController.addDiscussionMessage);
+router.delete('/:groupId/discussion/:messageId', academicGroupController.deleteDiscussionMessage);
+
+// Recursos del grupo
+router.get('/:groupId/resources', academicGroupController.getGroupResources);
+router.post('/:groupId/resources', academicGroupController.addGroupResource);
+router.delete('/:groupId/resources/:resourceId', academicGroupController.removeGroupResource);
 
 module.exports = router;

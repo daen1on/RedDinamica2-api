@@ -87,7 +87,30 @@ const academicGroupSchema = new Schema({
             type: Boolean,
             default: true
         }
-    }
+    },
+    // Discusión general del grupo
+    discussion: [{
+        content: {
+            type: String,
+            required: true,
+            trim: true,
+            maxlength: 2000
+        },
+        author: {
+            type: Schema.ObjectId,
+            ref: 'User',
+            required: true
+        },
+        createdAt: {
+            type: Date,
+            default: Date.now
+        }
+    }],
+    // Recursos asociados/importados al grupo
+    resources: [{
+        type: Schema.ObjectId,
+        ref: 'Resource'
+    }]
 }, {
     timestamps: true
 });

@@ -25,4 +25,7 @@ router.post('/:id/grade', academicLessonController.gradeLesson);
 // Exportación
 router.post('/:id/export', academicLessonController.exportToMain);
 
+// Chat de la lección (mensajes simples)
+router.post('/:id/chat', academicLessonController.addChatMessage);
+
 module.exports = router;

@@ -3,6 +3,7 @@
 const AcademicLesson = require('../models/academicLesson.model');
 const AcademicGroup = require('../models/academicGroup.model');
 const User = require('../models/user.model');
+const Lesson = require('../models/lesson.model');
 
 // Crear una nueva lección académica
 exports.createLesson = async (req, res) => {
@@ -67,12 +68,14 @@ exports.createLesson = async (req, res) => {
                 objectives: justification?.objectives || ''
             },
             tags: tags ? tags.split(',').map(tag => tag.trim()) : [],
-            knowledge_areas: knowledge_areas || [],
+            // Guardar knowledge_areas como nombres; si vienen ids, resolverlos
+            knowledge_areas: Array.isArray(knowledge_areas) ? knowledge_areas : [],
             
             // Nuevos campos inicializados
             files: [],
             conversations: [],
-            level: group.subjects || [], // Heredar materias del grupo como niveles
+            // level debe reflejar el nivel académico del grupo (no materias)
+            level: [group.academicLevel],
             state: 'draft',
             development_group: [{
                 user: authorId,
@@ -100,6 +103,21 @@ exports.createLesson = async (req, res) => {
         });
 
         // Populate los datos para la respuesta
+        // Si knowledge_areas fueron ids, obtener nombres para almacenarlos como strings
+        if (Array.isArray(knowledge_areas) && knowledge_areas.length > 0 && typeof knowledge_areas[0] === 'string') {
+            try {
+                const KnowledgeArea = require('../models/knowledge-area.model');
+                const found = await KnowledgeArea.find({ _id: { $in: knowledge_areas } }, 'name').lean();
+                const names = found.map(k => k.name).filter(Boolean);
+                if (names.length > 0) {
+                    savedLesson.knowledge_areas = names;
+                    await savedLesson.save();
+                }
+            } catch (err) {
+                // Continuar sin bloquear la creación si falla la resolución de nombres
+            }
+        }
+
         await savedLesson.populate([
             { path: 'author', select: 'name surname email' },
             { path: 'teacher', select: 'name surname email' },
@@ -137,7 +155,8 @@ exports.getGroupLessons = async (req, res) => {
             });
         }
 
-        if (group.teacher.toString() !== userId && !group.students.some(sid => sid.toString() === userId)) {
+        const isAdmin = req.user && (req.user.role === 'admin' || (Array.isArray(req.user.roles) && req.user.roles.includes('admin')));
+        if (!isAdmin && group.teacher.toString() !== userId && !group.students.some(sid => sid.toString() === userId)) {
             return res.status(403).json({
                 status: 'error',
                 message: 'No tienes permisos para ver las lecciones de este grupo'
@@ -221,8 +240,10 @@ exports.getLessonById = async (req, res) => {
 
         const lesson = await AcademicLesson.findById(id)
             .populate('author', 'name email avatar academicProfile')
-            .populate('academicGroup', 'name academicLevel grade teacher')
-            .populate('teacher', 'name email avatar');
+            // Incluir students para que el frontend pueda verificar pertenencia sin llamada extra
+            .populate('academicGroup', 'name academicLevel grade teacher students')
+            .populate('teacher', 'name email avatar')
+            .populate('messages.author', 'name email avatar');
 
         if (!lesson) {
             return res.status(404).json({
@@ -232,7 +253,8 @@ exports.getLessonById = async (req, res) => {
         }
 
         // Verificar permisos
-        const group = await AcademicGroup.findById(lesson.academicGroup);
+        const groupId = lesson.academicGroup && lesson.academicGroup._id ? lesson.academicGroup._id : lesson.academicGroup;
+        const group = await AcademicGroup.findById(groupId);
         if (!group) {
             return res.status(404).json({
                 status: 'error',
@@ -240,9 +262,13 @@ exports.getLessonById = async (req, res) => {
             });
         }
 
-        if (group.teacher.toString() !== userId && 
+        // Permitir acceso a admin global
+        const isAdmin = req.user && (req.user.role === 'admin' || (Array.isArray(req.user.roles) && req.user.roles.includes('admin')));
+        const lessonAuthorId = lesson.author && lesson.author._id ? lesson.author._id.toString() : lesson.author.toString();
+        if (!isAdmin &&
+            group.teacher.toString() !== userId && 
             !group.students.some(sid => sid.toString() === userId) && 
-            lesson.author.toString() !== userId) {
+            lessonAuthorId !== userId) {
             return res.status(403).json({
                 status: 'error',
                 message: 'No tienes permisos para ver esta lección'
@@ -260,6 +286,49 @@ exports.getLessonById = async (req, res) => {
             message: 'Error interno del servidor',
             error: error.message
         });
+    }
+};
+
+// Añadir mensaje de chat a la lección académica
+exports.addChatMessage = async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { content } = req.body;
+        const userId = req.user.sub || req.user.id;
+
+        if (!content || !String(content).trim()) {
+            return res.status(400).json({ status: 'error', message: 'Contenido del mensaje requerido' });
+        }
+
+        const lesson = await AcademicLesson.findById(id).populate('academicGroup', 'teacher students');
+        if (!lesson) {
+            return res.status(404).json({ status: 'error', message: 'Lección académica no encontrada' });
+        }
+
+        // Verificación de permisos: autor, docente del grupo, estudiante del grupo o miembro del equipo de desarrollo
+        const group = lesson.academicGroup;
+        const isAuthor = lesson.author && lesson.author.toString() === userId;
+        const isTeacher = group && group.teacher && group.teacher.toString() === userId;
+        const isStudent = group && Array.isArray(group.students) && group.students.some(sid => sid.toString() === userId);
+        const isDevMember = Array.isArray(lesson.development_group) && lesson.development_group.some(m => (m.user || m).toString() === userId);
+
+        if (!(isAuthor || isTeacher || isStudent || isDevMember)) {
+            return res.status(403).json({ status: 'error', message: 'No tienes permisos para enviar mensajes en esta lección' });
+        }
+
+        lesson.messages.push({ content: String(content), author: userId });
+        await lesson.save();
+
+        const updated = await AcademicLesson.findById(id)
+            .populate('author', 'name email avatar academicProfile')
+            .populate('academicGroup', 'name academicLevel grade teacher students')
+            .populate('teacher', 'name email avatar')
+            .populate('messages.author', 'name email avatar');
+
+        return res.status(200).json({ status: 'success', message: 'Mensaje enviado', data: updated });
+    } catch (error) {
+        console.error('Error al enviar mensaje de chat:', error);
+        return res.status(500).json({ status: 'error', message: 'Error interno del servidor', error: error.message });
     }
 };
 
@@ -668,7 +737,12 @@ exports.updateLessonState = async (req, res) => {
         const { state, message } = req.body;
         const userId = req.user.sub || req.user.id;
 
-        const lesson = await AcademicLesson.findById(id);
+        const lesson = await AcademicLesson.findById(id)
+            .populate('author', 'name surname')
+            .populate('leader', 'name surname')
+            .populate('teacher', 'name surname')
+            .populate('development_group.user', 'name surname');
+            
         if (!lesson) {
             return res.status(404).json({
                 status: 'error',
@@ -677,7 +751,7 @@ exports.updateLessonState = async (req, res) => {
         }
 
         // Verificar que el usuario sea el líder
-        if (lesson.leader.toString() !== userId && req.user.role !== 'admin') {
+        if (lesson.leader._id.toString() !== userId && req.user.role !== 'admin') {
             return res.status(403).json({
                 status: 'error',
                 message: 'Solo el líder de la lección puede cambiar su estado'
@@ -692,6 +766,7 @@ exports.updateLessonState = async (req, res) => {
             });
         }
 
+        const oldState = lesson.state;
         lesson.state = state;
         
         // Si hay un mensaje, agregarlo como comentario del sistema
@@ -705,6 +780,56 @@ exports.updateLessonState = async (req, res) => {
         }
 
         await lesson.save();
+
+        // Enviar notificaciones a todos los miembros del grupo de desarrollo y al profesor
+        try {
+            const participants = new Set();
+            
+            // Agregar autor
+            if (lesson.author) participants.add(lesson.author._id.toString());
+            
+            // Agregar líder (si es diferente del autor)
+            if (lesson.leader && lesson.leader._id.toString() !== userId) {
+                participants.add(lesson.leader._id.toString());
+            }
+            
+            // Agregar profesor
+            if (lesson.teacher) participants.add(lesson.teacher._id.toString());
+            
+            // Agregar miembros del grupo de desarrollo
+            if (lesson.development_group && lesson.development_group.length > 0) {
+                lesson.development_group.forEach(member => {
+                    if (member.user && member.user._id) {
+                        participants.add(member.user._id.toString());
+                    }
+                });
+            }
+
+            // Filtrar al usuario que hizo el cambio
+            participants.delete(userId);
+
+            const participantIds = Array.from(participants);
+
+            // Crear notificaciones usando el servicio de notificaciones
+            if (participantIds.length > 0 && oldState !== state) {
+                const NotificationService = require('../services/notification.service');
+                const User = require('../models/user.model');
+                const currentUser = await User.findById(userId).select('name surname');
+                
+                await NotificationService.createLessonStateChangeNotification(
+                    currentUser,
+                    participantIds,
+                    lesson._id,
+                    lesson.title,
+                    oldState,
+                    state,
+                    message || ''
+                ).catch(err => console.error('Error creating academic lesson state change notification:', err));
+            }
+        } catch (notificationError) {
+            console.error('Error enviando notificaciones de cambio de estado:', notificationError);
+            // No fallar la operación principal por errores de notificación
+        }
 
         res.status(200).json({
             status: 'success',
@@ -729,7 +854,12 @@ exports.addTeacherComment = async (req, res) => {
         const { content, type = 'feedback' } = req.body;
         const userId = req.user.sub || req.user.id;
 
-        const lesson = await AcademicLesson.findById(id);
+        const lesson = await AcademicLesson.findById(id)
+            .populate('author', 'name surname')
+            .populate('leader', 'name surname')
+            .populate('teacher', 'name surname')
+            .populate('development_group.user', 'name surname');
+            
         if (!lesson) {
             return res.status(404).json({
                 status: 'error',
@@ -738,7 +868,7 @@ exports.addTeacherComment = async (req, res) => {
         }
 
         // Verificar que el usuario sea el profesor del grupo
-        if (lesson.teacher.toString() !== userId && req.user.role !== 'admin') {
+        if (lesson.teacher._id.toString() !== userId && req.user.role !== 'admin') {
             return res.status(403).json({
                 status: 'error',
                 message: 'Solo el profesor puede agregar comentarios'
@@ -755,6 +885,43 @@ exports.addTeacherComment = async (req, res) => {
         await lesson.save();
         await lesson.populate('comments.author', 'name surname email');
 
+        // Enviar notificaciones a todos los miembros del grupo de desarrollo
+        try {
+            const participants = new Set();
+            
+            // Agregar autor
+            if (lesson.author) participants.add(lesson.author._id.toString());
+            
+            // Agregar líder
+            if (lesson.leader) participants.add(lesson.leader._id.toString());
+            
+            // Agregar miembros del grupo de desarrollo
+            if (lesson.development_group && lesson.development_group.length > 0) {
+                lesson.development_group.forEach(member => {
+                    if (member.user && member.user._id) {
+                        participants.add(member.user._id.toString());
+                    }
+                });
+            }
+
+            const participantIds = Array.from(participants);
+
+            // Crear notificaciones usando el servicio de notificaciones
+            if (participantIds.length > 0) {
+                const NotificationService = require('../services/notification.service');
+                await NotificationService.createLessonMessageNotification(
+                    lesson.teacher,
+                    participantIds,
+                    lesson._id,
+                    lesson.title,
+                    content
+                ).catch(err => console.error('Error creating teacher comment notification:', err));
+            }
+        } catch (notificationError) {
+            console.error('Error enviando notificaciones de comentario del profesor:', notificationError);
+            // No fallar la operación principal por errores de notificación
+        }
+
         res.status(200).json({
             status: 'success',
             message: 'Comentario agregado exitosamente',
@@ -768,5 +935,50 @@ exports.addTeacherComment = async (req, res) => {
             message: 'Error interno del servidor',
             error: error.message
         });
+    }
+};
+
+// Mover lección académica a RedDinámica (solo admin o lesson_manager)
+exports.moveToRedDinamica = async (req, res) => {
+    try {
+        const { id } = req.params;
+        const al = await AcademicLesson.findById(id);
+        if (!al) {
+            return res.status(404).send({ message: 'Academic lesson not found' });
+        }
+
+        if (al.state !== 'ready_for_migration' || al.isExported) {
+            return res.status(400).send({ message: 'Academic lesson not ready for migration' });
+        }
+
+        const lesson = new Lesson({
+            title: al.title,
+            resume: al.resume,
+            references: '',
+            justification: '',
+            development_level: '',
+            level: al.level,
+            state: 'draft',
+            type: 'academic',
+            author: al.author,
+            leader: al.leader,
+            created_at: new Date().toISOString(),
+            visible: false,
+            accepted: false,
+            knowledge_area: [],
+            views: 0,
+            score: 0,
+            version: 1
+        });
+        await lesson.save();
+
+        al.isExported = true;
+        al.exportedLesson = lesson._id;
+        await al.save();
+
+        return res.status(200).send({ ok: true, lessonId: lesson._id });
+    } catch (err) {
+        console.error(err);
+        return res.status(500).send({ message: 'Error moving lesson to RedDinámica' });
     }
 };
