@@ -712,6 +712,73 @@ class NotificationService {
 
         return stats;
     }
+
+    // ===== NOTIFICACIONES PARA GESTORES DE LECCIONES =====
+
+    // 26. Notificación a gestores de lecciones cuando hay una nueva tarea pendiente
+    static async createNewTaskNotificationForManagers(taskType, taskDetails, fromUser = null) {
+        try {
+            const User = require('../models/user.model');
+            
+            // Obtener todos los administradores y gestores de lecciones
+            const managers = await User.find({ 
+                role: { $in: ['admin', 'delegated_admin', 'lesson_manager'] },
+                actived: true 
+            }).select('_id');
+
+            if (managers.length === 0) {
+                console.log('No hay gestores de lecciones disponibles para notificar');
+                return [];
+            }
+
+            // Definir el contenido según el tipo de tarea
+            let title = '';
+            let content = '';
+            let link = '/admin/tareas/pendientes';
+            let priority = 'high';
+
+            switch(taskType) {
+                case 'new_resource':
+                    title = 'Nuevo recurso pendiente de aprobación';
+                    content = `Hay un nuevo recurso "${taskDetails.resourceName}" esperando aprobación. Revisa las tareas pendientes.`;
+                    break;
+                case 'new_suggestion':
+                    title = 'Nueva sugerencia de lección';
+                    content = `Se ha sugerido una nueva lección "${taskDetails.lessonTitle}". Revisa las tareas pendientes.`;
+                    break;
+                case 'new_call':
+                    title = 'Nueva convocatoria pendiente';
+                    content = `Hay una convocatoria pendiente para la lección "${taskDetails.lessonTitle}". Revísala en las tareas pendientes.`;
+                    break;
+                case 'ready_migration':
+                    title = 'Lección académica lista para migrar';
+                    content = `La lección académica "${taskDetails.lessonTitle}" está lista para ser migrada a RedDinámica.`;
+                    break;
+                default:
+                    title = 'Nueva tarea pendiente';
+                    content = 'Tienes una nueva tarea pendiente. Revísala en el panel de administración.';
+            }
+
+            const notificationData = {
+                type: 'system',
+                title,
+                content,
+                link,
+                from: fromUser ? fromUser._id : null,
+                priority
+            };
+
+            const notifications = managers.map(manager => ({
+                user: manager._id,
+                ...notificationData
+            }));
+
+            return await Notification.insertMany(notifications);
+        } catch (error) {
+            console.error('Error al crear notificación para gestores:', error);
+            return [];
+        }
+    }
 }
 
 module.exports = NotificationService; 
