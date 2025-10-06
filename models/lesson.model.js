@@ -26,7 +26,9 @@ const messageSchema = new Schema({
     author: { type: Schema.Types.ObjectId, ref: 'User' },
     file: fileSchema,
     conversationTitle: String,
-    created_at: { type: Date, default: Date.now }
+    created_at: { type: Date, default: Date.now },
+    edited: { type: Boolean, default: false },
+    edited_at: { type: Date, default: null }
 });
 
 const lessonSchema = new Schema({
