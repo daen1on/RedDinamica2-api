@@ -40,17 +40,12 @@ const saveResource = async (req, res) => {
                 resourceStored.name
             ).catch(err => console.error('Error creating resource submitted notification:', err));
             
-            // 2. Notificar a los administradores
-            const adminUsers = await User.find({ role: { $in: ['admin', 'delegated_admin'] } }, '_id');
-            if (adminUsers && adminUsers.length > 0) {
-                const adminIds = adminUsers.map(admin => admin._id);
-                await NotificationService.createNewResourcePendingNotification(
-                    author,
-                    resourceStored._id,
-                    resourceStored.name,
-                    adminIds
-                ).catch(err => console.error('Error creating admin notification:', err));
-            }
+            // 2. Notificar a los administradores y gestores de lecciones
+            await NotificationService.createNewTaskNotificationForManagers(
+                'new_resource',
+                { resourceName: resourceStored.name },
+                author
+            ).catch(err => console.error('Error notifying managers:', err));
         }
         
         return res.status(200).send({ resource: resourceStored });
