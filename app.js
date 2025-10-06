@@ -132,6 +132,8 @@ let errorReportRoutes = require('./routes/errorReports.routes');
 let notificationRoutes = require('./routes/notification.routes');
 let academicGroupRoutes = require('./routes/academicGroup.routes');
 let academicLessonRoutes = require('./routes/academicLesson.routes');
+let adminRoutes = require('./routes/admin.routes');
+let cronRoutes = require('./routes/cron.routes');
 
 // Middlewares
 app.use(express.urlencoded({ extended: false })); //Parse URL-encoded bodies
@@ -183,6 +185,8 @@ app.use('/api', errorReportRoutes);
 app.use('/api', notificationRoutes);
 app.use('/api/academic-groups', academicGroupRoutes);
 app.use('/api/academic-lessons', academicLessonRoutes);
+app.use('/api', adminRoutes);
+app.use('/api/cron', cronRoutes);
 
 // Rewrite url
 app.use('*', function(req, res, next){
