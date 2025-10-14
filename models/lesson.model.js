@@ -40,6 +40,7 @@ const lessonSchema = new Schema({
     level: [String],
     state: String,
     type: String,
+    academicLessonId: { type: Schema.Types.ObjectId, ref: 'AcademicLesson' },
     call: callSchema,
     expert: { type: Schema.Types.ObjectId, ref: 'User' },
     author: { type: Schema.Types.ObjectId, ref: 'User' },

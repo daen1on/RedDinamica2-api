@@ -33,11 +33,13 @@ const getPublications = async (req, res) => {
     const commentsLimit = parseInt(req.query.commentsLimit) || 10;
     const repliesLimit = parseInt(req.query.repliesLimit) || 5;
     
-    const follows = await Follow.find({ user: req.user.sub }).populate('followed');
-    let followsClean = follows.map(follow => follow.followed._id);
-    followsClean.push(req.user.sub); // Includes the user's own publications for fetching
-
     try {
+        const follows = await Follow.find({ user: req.user.sub }).populate('followed');
+        let followsClean = follows
+            .filter(follow => follow && follow.followed && follow.followed._id)
+            .map(follow => follow.followed._id);
+        followsClean.push(req.user.sub); // Includes the user's own publications for fetching
+
         const options = {
             page,
             limit: 10,

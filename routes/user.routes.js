@@ -24,9 +24,10 @@ api.put('/user-update/:id', auth.ensureAuth, userController.updateUser);
 api.delete('/user', auth.ensureAuth, userController.deleteUser);
 api.delete('/user/:id', [auth.ensureAuth, controlAccess.isAdmin], userController.deleteUser);
 api.get('/user/:id', auth.ensureAuth , userController.getUser);
+// Registrar la búsqueda específica ANTES de la ruta con parámetro para evitar colisiones
+api.get('/users/search', auth.ensureAuth , userController.searchUsers);
 api.get('/users/:page?', auth.ensureAuth , userController.getUsers);
 api.get('/all-users', auth.ensureAuth , userController.getAllUsers);
-api.get('/users/search', auth.ensureAuth , userController.searchUsers);
 api.get('/new-users/:page?', [auth.ensureAuth, controlAccess.isAdmin], userController.getNewUsers);
 api.get('/counters/:id?', auth.ensureAuth , userController.getCounters);
 
@@ -34,5 +35,9 @@ api.post('/upload-image-user/:id', [auth.ensureAuth, uploadMiddleware.uploadImag
 api.get('/get-image-user/:imageFile', userController.getProfilePic);
 api.post('/force-logout/:id', [auth.ensureAuth, controlAccess.isAdmin], userController.forceUserLogout);
 api.get('/token-stats', [auth.ensureAuth, controlAccess.isAdmin], userController.getTokenStats);
+
+// Preferencias del usuario autenticado
+api.get('/users/me/preferences', auth.ensureAuth, userController.getMyPreferences);
+api.put('/users/me/preferences', auth.ensureAuth, userController.updatePreferences);
 
 module.exports = api;

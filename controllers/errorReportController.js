@@ -1,6 +1,8 @@
 const fs = require('fs').promises;
 const path = require('path');
 const ErrorReport = require('../models/errorReport.model');
+const NotificationService = require('../services/notification.service');
+const User = require('../models/user.model');
 const FILE_PATH = path.join(__dirname, '../uploads/errors/');
 
 exports.createErrorReport = (req, res) => {
@@ -21,6 +23,7 @@ exports.createErrorReport = (req, res) => {
   } : null;
 
   const errorReport = new ErrorReport({
+    reporter: req.user.sub, // Guardar el usuario que reporta
     category,
     type,
     module: module || 'N/A',
@@ -82,12 +85,23 @@ exports.getErrorReports = (req, res) => {
   }
 
   ErrorReport.find(query)
+    .populate('reporter', 'name surname email')
+    .populate('reportedUserId', 'name surname email')
+    .populate('publicationId')
     .sort({ created_at: -1 })
     .skip((page - 1) * pageSize)
     .limit(parseInt(pageSize))
     .then(reports => {
       ErrorReport.countDocuments(query).then(total => {
-        res.status(200).send({ data: reports, total });
+        // Transformar datos para compatibilidad con frontend
+        const transformedReports = reports.map(report => {
+          const reportObj = report.toObject();
+          return {
+            ...reportObj,
+            reportedUser: reportObj.reportedUserId
+          };
+        });
+        res.status(200).send({ data: transformedReports, total });
       });
     })
     .catch(err => res.status(500).send({ message: 'Error al obtener los reportes.', error: err.message }));
@@ -136,6 +150,85 @@ exports.updateErrorReport = async (req, res) => {
   } catch (err) {
     console.log('Error updating error report:', err.message);
     res.status(500).send({ message: 'Error al actualizar el reporte.', error: err.message });
+  }
+};
+
+// Resolver denuncia y notificar al denunciante
+exports.resolveComplaint = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { reporterId, message } = req.body;
+
+    if (!reporterId || !message) {
+      return res.status(400).send({ message: 'Faltan campos obligatorios (reporterId, message).' });
+    }
+
+    // Buscar la denuncia
+    const complaint = await ErrorReport.findById(id);
+    if (!complaint) {
+      return res.status(404).send({ message: 'Denuncia no encontrada.' });
+    }
+
+    // Marcar como resuelta
+    complaint.status = 'resolved';
+    complaint.resolved_at = new Date();
+    await complaint.save();
+
+    // Obtener información del admin que resuelve
+    const admin = await User.findById(req.user.sub).select('name surname');
+
+    // Enviar notificación al denunciante
+    await NotificationService.createComplaintResolvedNotification(
+      admin,
+      reporterId,
+      complaint._id,
+      message
+    );
+
+    res.status(200).send({ 
+      message: 'Denuncia resuelta y notificación enviada correctamente.',
+      complaint 
+    });
+  } catch (err) {
+    console.error('Error al resolver la denuncia:', err);
+    res.status(500).send({ 
+      message: 'Error al resolver la denuncia.', 
+      error: err.message 
+    });
+  }
+};
+
+// Enviar advertencia a usuario denunciado
+exports.sendWarningToUser = async (req, res) => {
+  try {
+    const { userId, message } = req.body;
+
+    if (!userId || !message) {
+      return res.status(400).send({ message: 'Faltan campos obligatorios (userId, message).' });
+    }
+
+    // Obtener información del admin que envía la advertencia
+    const admin = await User.findById(req.user.sub).select('name surname');
+    if (!admin) {
+      return res.status(404).send({ message: 'Administrador no encontrado.' });
+    }
+
+    // Enviar notificación de advertencia al usuario
+    await NotificationService.createUserWarningNotification(
+      admin,
+      userId,
+      message
+    );
+
+    res.status(200).send({ 
+      message: 'Advertencia enviada correctamente al usuario.'
+    });
+  } catch (err) {
+    console.error('Error al enviar advertencia:', err);
+    res.status(500).send({ 
+      message: 'Error al enviar la advertencia.', 
+      error: err.message 
+    });
   }
 };
 

@@ -5,6 +5,7 @@ const digestService = require('../services/monthly-digest.service');
 const emailTemplate = require('../services/monthly-digest-email.template');
 const mailService = require('../services/mail.service');
 const path = require('path');
+const Notification = require('../models/notification.model');
 
 /**
  * Controlador de tareas programadas (Cron Jobs)
@@ -18,6 +19,11 @@ const path = require('path');
  */
 async function sendDigestToUser(user) {
     try {
+        // Respetar preferencia del usuario: si está desactivada, omitir envío
+        if (user && user.emailDigestEnabled === false) {
+            console.log(`[DIGEST] Preferencia desactivada para ${user.email}, omitiendo envío`);
+            return false;
+        }
         console.log(`[DIGEST] Generando resumen para ${user.name} ${user.surname} (${user.email})`);
         
         // Generar el resumen del usuario
@@ -271,3 +277,113 @@ exports.initMonthlyDigestCron = function() {
     return task;
 };
 
+
+/**
+ * Ejecuta la limpieza de notificaciones antiguas
+ * Elimina todas las notificaciones con `created_at` anterior al periodo de retención
+ * Por defecto, mantiene 4 meses y elimina el resto
+ */
+exports.executeNotificationCleanup = async function() {
+    try {
+        console.log('╔════════════════════════════════════════════════════════╗');
+        console.log('║          INICIANDO LIMPIEZA DE NOTIFICACIONES          ║');
+        console.log('╚════════════════════════════════════════════════════════╝');
+
+        const retentionMonths = parseInt(process.env.NOTIFICATION_RETENTION_MONTHS || '4', 10);
+        const now = new Date();
+        const cutoffDate = new Date(now);
+        cutoffDate.setMonth(cutoffDate.getMonth() - (isNaN(retentionMonths) ? 4 : retentionMonths));
+
+        console.log(`[CLEANUP] Fecha actual: ${now.toISOString()}`);
+        console.log(`[CLEANUP] Retención: ${retentionMonths} meses`);
+        console.log(`[CLEANUP] Eliminando notificaciones con created_at < ${cutoffDate.toISOString()}`);
+
+        const result = await Notification.deleteMany({
+            created_at: { $lt: cutoffDate }
+        });
+
+        const deleted = (result && (result.deletedCount || result.n)) ? (result.deletedCount || result.n) : 0;
+
+        console.log('╔════════════════════════════════════════════════════════╗');
+        console.log('║                  LIMPIEZA COMPLETADA                   ║');
+        console.log('╚════════════════════════════════════════════════════════╝');
+        console.log(`[CLEANUP] ✓ Notificaciones eliminadas: ${deleted}`);
+
+        return {
+            success: true,
+            deleted,
+            cutoff: cutoffDate.toISOString(),
+            retentionMonths
+        };
+    } catch (error) {
+        console.error('[CLEANUP] X Error crítico en limpieza de notificaciones:', error);
+        return {
+            success: false,
+            error: error.message,
+            deleted: 0
+        };
+    }
+};
+
+/**
+ * Endpoint manual para ejecutar la limpieza de notificaciones (útil para testing)
+ * Uso: GET /api/cron/execute-notification-cleanup
+ */
+exports.manualExecuteNotificationCleanup = async function(req, res) {
+    try {
+        // Solo permitir a administradores ejecutar manualmente
+        if (req.user.role !== 'admin') {
+            return res.status(403).json({
+                status: 'error',
+                message: 'Solo administradores pueden ejecutar esta acción'
+            });
+        }
+
+        console.log(`[CLEANUP] Ejecución manual solicitada por ${req.user.sub}`);
+        const result = await exports.executeNotificationCleanup();
+
+        return res.status(200).json({
+            status: 'success',
+            message: 'Limpieza de notificaciones ejecutada correctamente',
+            data: result
+        });
+    } catch (error) {
+        console.error('[CLEANUP] Error en ejecución manual:', error);
+        return res.status(500).json({
+            status: 'error',
+            message: 'Error ejecutando limpieza de notificaciones',
+            error: error.message
+        });
+    }
+};
+
+/**
+ * Inicializa el cron job para limpieza mensual automática de notificaciones
+ * Se ejecuta el día 1 de cada mes a las 3:00 AM por defecto
+ */
+exports.initNotificationCleanupCron = function() {
+    // Cron expression por defecto: '0 3 1 * *' = minuto 0, hora 3, día 1 de cada mes
+    // Para testing, puedes usar '*/10 * * * *' (cada 10 minutos)
+
+    const cronExpression = process.env.NOTIF_CLEANUP_CRON || '0 3 1 * *';
+
+    console.log('╔════════════════════════════════════════════════════════╗');
+    console.log('║   🗓️  INICIALIZANDO CRON DE LIMPIEZA NOTIFICACIONES   ║');
+    console.log('╚════════════════════════════════════════════════════════╝');
+    console.log(`[CRON] Expresión limpieza: ${cronExpression}`);
+    console.log('[CRON] Descripción: Día 1 de cada mes a las 3:00 AM');
+    console.log('[CRON] Para testing, configura NOTIF_CLEANUP_CRON=*/10 * * * * en .env');
+
+    const task = cron.schedule(cronExpression, async () => {
+        console.log('\n[CRON] ⏰ Ejecutando tarea programada de limpieza de notificaciones...');
+        await exports.executeNotificationCleanup();
+    }, {
+        scheduled: true,
+        timezone: process.env.TIMEZONE || "America/Bogota"
+    });
+
+    console.log('[CRON] ✓ Cron job de limpieza inicializado correctamente');
+    console.log('╚════════════════════════════════════════════════════════╝\n');
+
+    return task;
+};

@@ -26,6 +26,8 @@ var userSchema = schema({
     created_at:String,
     resetPasswordToken: String,
     resetPasswordExpires: Date,
+    // Preferencias de comunicación
+    emailDigestEnabled: { type: Boolean, default: true },
     
     // Configuraciones de privacidad para lecciones según DESIGN_LESSONS_PROFILE.md
     lessonsPrivacySettings: {

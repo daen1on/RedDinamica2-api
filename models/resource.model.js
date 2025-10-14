@@ -9,6 +9,7 @@ var resourceSchema = schema({
     source:String,
     description:String,
     visible:{type:Boolean, default: false},
+    rejected:{type:Boolean, default: false},
     downloads:{type:Number, default: 0},
     score:{type: Number, default: 0},
     justification:String,

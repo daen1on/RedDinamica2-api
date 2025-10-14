@@ -35,7 +35,17 @@ router.get('/:groupId/statistics', academicGroupController.getGroupStatistics);
 router.put('/:groupId/permissions', academicGroupController.updateGroupPermissions);
 router.get('/:groupId/can-create-lessons', academicGroupController.canStudentCreateLessons);
 
-// Discusión del grupo
+// Sistema de Foro/Discusión (Threads)
+router.get('/:groupId/threads', academicGroupController.getDiscussionThreads);
+router.post('/:groupId/threads', academicGroupController.createDiscussionThread);
+router.get('/:groupId/threads/:threadId', academicGroupController.getDiscussionThread);
+router.delete('/:groupId/threads/:threadId', academicGroupController.deleteDiscussionThread);
+router.post('/:groupId/threads/:threadId/messages', academicGroupController.addMessageToThread);
+router.delete('/:groupId/threads/:threadId/messages/:messageId', academicGroupController.deleteMessageFromThread);
+router.put('/:groupId/threads/:threadId/pin', academicGroupController.togglePinThread);
+router.put('/:groupId/threads/:threadId/lock', academicGroupController.toggleLockThread);
+
+// Discusión del grupo (endpoints antiguos para compatibilidad)
 router.get('/:groupId/discussion', academicGroupController.getDiscussion);
 router.post('/:groupId/discussion', academicGroupController.addDiscussionMessage);
 router.delete('/:groupId/discussion/:messageId', academicGroupController.deleteDiscussionMessage);

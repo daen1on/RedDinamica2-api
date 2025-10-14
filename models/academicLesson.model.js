@@ -21,6 +21,14 @@ const fileSchema = new Schema({
         type: String,
         required: true
     },
+    fileName: {
+        type: String,
+        required: true
+    },
+    groupTitle: {
+        type: String,
+        required: true
+    },
     path: {
         type: String,
         required: true
@@ -77,6 +85,12 @@ const academicLessonSchema = new Schema({
     resume: {
         type: String,
         required: true,
+        trim: true,
+        maxlength: 1000
+    },
+    references: {
+        type: String,
+        required: false,
         trim: true,
         maxlength: 1000
     },
@@ -169,12 +183,12 @@ const academicLessonSchema = new Schema({
         type: String,
         enum: [
             'draft',
-            'in_development',
-            'review_requested',
-            'under_review',
             'approved',
             'rejected',
+            'proposed',
+            'in_development',
             'completed',
+            'graded',
             'ready_for_migration'
         ],
         default: 'draft'
@@ -205,7 +219,7 @@ const academicLessonSchema = new Schema({
     status: {
         type: String,
         required: true,
-        enum: ['draft', 'proposed', 'approved', 'rejected', 'completed', 'graded'],
+        enum: ['draft', 'proposed', 'approved', 'in_development', 'rejected', 'completed', 'graded', 'ready_for_migration'],
         default: 'draft'
     },
     grade: {

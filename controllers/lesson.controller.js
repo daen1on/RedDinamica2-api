@@ -253,8 +253,7 @@ const updateLesson = async (req, res) => {
                 currentState: currentLesson.state,
                 newState: updateData.state
             });
-        }
-
+        }       
         // Log de campos específicos que se están actualizando
         console.log("Fields being updated:", {
             hasLevel: updateData.level !== undefined,
@@ -328,6 +327,61 @@ const updateLesson = async (req, res) => {
             lessonUpdated = await Lesson.findById(lessonId);
         }
 
+        // Enviar notificaciones cuando la lección pasa a 'assigned' (asignación desde Admin)
+        try {
+            const stateChangedToAssigned = updateData.state === 'assigned' && currentLesson.state !== 'assigned';
+            if (stateChangedToAssigned) {
+                // Cargar usuarios necesarios
+                const adminUser = await User.findById(req.user.sub).select('name surname _id');
+
+                const leaderId = (updateData.leader && updateData.leader._id) ? updateData.leader._id : updateData.leader;
+                const expertId = (updateData.expert && updateData.expert._id) ? updateData.expert._id : updateData.expert;
+                let developmentGroupIds = [];
+                if (Array.isArray(updateData.development_group)) {
+                    developmentGroupIds = updateData.development_group.map(m => (m && m._id) ? m._id : m).filter(Boolean);
+                } else if (Array.isArray(lessonUpdated.development_group)) {
+                    developmentGroupIds = lessonUpdated.development_group.map(m => (m && m._id) ? m._id : m).filter(Boolean);
+                }
+
+                // Notificar a líder
+                if (leaderId) {
+                    await NotificationService.createLeaderAssignmentNotification(
+                        adminUser,
+                        leaderId,
+                        lessonUpdated._id,
+                        lessonUpdated.title
+                    ).catch(err => console.error('Error notifying leader assignment:', err));
+                }
+
+                // Notificar a facilitador (experto)
+                if (expertId) {
+                    await NotificationService.createExpertAssignmentNotification(
+                        adminUser,
+                        expertId,
+                        lessonUpdated._id,
+                        lessonUpdated.title
+                    ).catch(err => console.error('Error notifying expert assignment:', err));
+                }
+
+                // Notificar a grupo de desarrollo (excluyendo líder y experto si están dentro)
+                const excludeIds = new Set([leaderId?.toString(), expertId?.toString()].filter(Boolean));
+                const devGroupToNotify = developmentGroupIds
+                    .map(id => id?.toString())
+                    .filter(id => id && !excludeIds.has(id));
+
+                if (devGroupToNotify.length > 0) {
+                    await NotificationService.createDevelopmentGroupAssignmentNotification(
+                        adminUser,
+                        devGroupToNotify,
+                        lessonUpdated._id,
+                        lessonUpdated.title
+                    ).catch(err => console.error('Error notifying development group assignment:', err));
+                }
+            }
+        } catch (notifyErr) {
+            console.error('Error sending assignment notifications:', notifyErr);
+        }
+
         // Verificar si es una experiencia y cambió el estado de aceptación
         if (currentLesson.class === 'experience' && updateData.hasOwnProperty('accepted') && currentLesson.accepted !== updateData.accepted) {
             try {
@@ -356,6 +410,28 @@ const updateLesson = async (req, res) => {
                 console.error('Error enviando notificación de experiencia:', notificationError);
                 // No fallar la operación principal por errores de notificación
             }
+        }
+
+        // Notificar a admins y lesson_managers cuando una lección pasa a "completed"
+        try {
+            const stateChangedToCompleted = updateData.state === 'completed' && currentLesson.state !== 'completed';
+            if (stateChangedToCompleted) {
+                console.log("Lesson state changed to completed, notifying admins and lesson managers...");
+                
+                // Obtener información del usuario que completó la lección
+                const lessonLeader = await User.findById(req.user.sub).select('name surname _id');
+                
+                if (lessonLeader) {
+                    await NotificationService.createLessonCompletedNotification(
+                        lessonLeader,
+                        lessonUpdated._id,
+                        lessonUpdated.title
+                    ).catch(err => console.error('Error notifying lesson completion:', err));
+                    console.log('Notificaciones de lección completada enviadas a administradores y gestores');
+                }
+            }
+        } catch (notifyErr) {
+            console.error('Error sending lesson completion notifications:', notifyErr);
         }
 
         console.log("Lesson updated successfully, preparing response...");

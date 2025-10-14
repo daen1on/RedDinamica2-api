@@ -1,5 +1,17 @@
 require('dotenv').config();
 
+// Configure console verbosity early, before loading other modules that may log during import
+(() => {
+    const LEVELS = { silent: 0, error: 1, warn: 2, info: 3, debug: 4 };
+    const envLevel = String(process.env.LOG_LEVEL || (process.env.NODE_ENV === 'production' ? 'warn' : 'debug')).toLowerCase();
+    const current = LEVELS.hasOwnProperty(envLevel) ? LEVELS[envLevel] : LEVELS.debug;
+    const noop = () => {};
+    if (current < LEVELS.debug) { console.debug = noop; }
+    if (current < LEVELS.info)  { console.info = noop; console.log = noop; }
+    if (current < LEVELS.warn)  { console.warn = noop; }
+    // console.error always enabled
+})();
+
 const PORT = process.env.PORT || 3800;
 const mongoose = require("./db/connect");
 const app = require('./app');

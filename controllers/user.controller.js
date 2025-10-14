@@ -409,6 +409,44 @@ const updateUser = async (req, res) => {
         return res.status(500).send({ message: 'Error in the request. User has not been updated' });
     }
 };
+
+// Actualizar preferencias del usuario autenticado (p. ej., emailDigestEnabled)
+const updatePreferences = async (req, res) => {
+    const userId = req.user.sub;
+    const { emailDigestEnabled } = req.body || {};
+
+    if (typeof emailDigestEnabled !== 'boolean') {
+        return res.status(400).send({ message: 'Campo emailDigestEnabled inválido o ausente' });
+    }
+
+    try {
+        const update = { emailDigestEnabled };
+        const userUpdated = await User.findByIdAndUpdate(userId, update, { new: true })
+            .populate('city')
+            .populate('profession')
+            .populate('institution');
+        if (!userUpdated) {
+            return res.status(404).send({ message: 'Usuario no encontrado' });
+        }
+        userUpdated.password = null;
+        return res.status(200).send({ user: userUpdated });
+    } catch (err) {
+        return res.status(500).send({ message: 'Error actualizando preferencias' });
+    }
+};
+
+// Obtener preferencias del usuario autenticado
+const getMyPreferences = async (req, res) => {
+    try {
+        const user = await User.findById(req.user.sub).select('emailDigestEnabled');
+        if (!user) {
+            return res.status(404).send({ message: 'Usuario no encontrado' });
+        }
+        return res.status(200).send({ emailDigestEnabled: user.emailDigestEnabled !== false });
+    } catch (err) {
+        return res.status(500).send({ message: 'Error obteniendo preferencias' });
+    }
+};
 const deleteUser = async (req, res) => {
     const userId = req.params.id || req.user.sub;
     const user = {
@@ -701,6 +739,8 @@ module.exports = {
     getProfilePic,
     resetPassword,
     forceUserLogout,
-    getTokenStats
+    getTokenStats,
+    updatePreferences,
+    getMyPreferences
 
 }

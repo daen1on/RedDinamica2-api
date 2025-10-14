@@ -329,7 +329,7 @@ exports.generateDigestEmail = function(digestData) {
                 </p>
                 <p style="margin: 0; font-size: 12px; opacity: 0.8;">
                     Recibes este email porque eres parte activa de nuestra comunidad.<br>
-                    Si no deseas recibir estos resúmenes mensuales, <a href="${process.env.FRONTEND_URL}/configuracion">actualiza tus preferencias</a>.
+                    Si no deseas recibir estos resúmenes mensuales, <a href="${process.env.URL}/configuracion">actualiza tus preferencias</a>.
                 </p>
             </div>
         </div>

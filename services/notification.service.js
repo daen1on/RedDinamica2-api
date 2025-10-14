@@ -36,6 +36,21 @@ class NotificationService {
         });
     }
 
+    // 0. Notificación de agregado/invitación a grupo académico
+    static async createGroupInvitationNotification(fromUser, toUserId, groupId, groupName) {
+        return await Notification.createNotification({
+            user: toUserId,
+            type: 'group',
+            title: 'Fuiste agregado a un grupo',
+            content: `${fromUser.name} ${fromUser.surname} te agregó al grupo "${groupName}"`,
+            link: `/academia/groups/${groupId}`,
+            relatedId: groupId,
+            relatedModel: 'AcademicGroup',
+            from: fromUser._id,
+            priority: 'medium'
+        });
+    }
+
     // 2. Notificación de nuevo mensaje en lección
     static async createLessonMessageNotification(fromUser, lessonParticipants, lessonId, lessonTitle, messageText) {
         const notificationData = {
@@ -82,6 +97,58 @@ class NotificationService {
         );
 
         const notifications = participantsToNotify.map(userId => ({
+            user: userId,
+            ...notificationData
+        }));
+
+        return await Notification.insertMany(notifications);
+    }
+
+    // Notificación: asignación de líder de lección
+    static async createLeaderAssignmentNotification(adminUser, leaderId, lessonId, lessonTitle) {
+        return await Notification.createNotification({
+            user: leaderId,
+            type: 'lesson',
+            title: 'Has sido asignado como líder',
+            content: `${adminUser.name} ${adminUser.surname} te asignó como líder de la lección "${lessonTitle}"`,
+            link: `/inicio/leccion/${lessonId}`,
+            relatedId: lessonId,
+            relatedModel: 'Lesson',
+            from: adminUser._id,
+            priority: 'high'
+        });
+    }
+
+    // Notificación: asignación de facilitador (experto) de lección
+    static async createExpertAssignmentNotification(adminUser, expertId, lessonId, lessonTitle) {
+        return await Notification.createNotification({
+            user: expertId,
+            type: 'lesson',
+            title: 'Has sido asignado como facilitador',
+            content: `${adminUser.name} ${adminUser.surname} te asignó como facilitador de la lección "${lessonTitle}"`,
+            link: `/inicio/leccion/${lessonId}`,
+            relatedId: lessonId,
+            relatedModel: 'Lesson',
+            from: adminUser._id,
+            priority: 'high'
+        });
+    }
+
+    // Notificación: miembros del grupo de desarrollo informados de asignación
+    static async createDevelopmentGroupAssignmentNotification(adminUser, userIds, lessonId, lessonTitle) {
+        if (!Array.isArray(userIds) || userIds.length === 0) return [];
+        const notificationData = {
+            type: 'lesson',
+            title: 'Lección asignada',
+            content: `${adminUser.name} ${adminUser.surname} asignó la lección "${lessonTitle}". Ya puedes participar en el desarrollo.`,
+            link: `/inicio/leccion/${lessonId}`,
+            relatedId: lessonId,
+            relatedModel: 'Lesson',
+            from: adminUser._id,
+            priority: 'high'
+        };
+
+        const notifications = userIds.map(userId => ({
             user: userId,
             ...notificationData
         }));
@@ -734,7 +801,7 @@ class NotificationService {
             // Definir el contenido según el tipo de tarea
             let title = '';
             let content = '';
-            let link = '/admin/tareas/pendientes';
+            let link = '/admin/tareas';
             let priority = 'high';
 
             switch(taskType) {
@@ -776,6 +843,89 @@ class NotificationService {
             return await Notification.insertMany(notifications);
         } catch (error) {
             console.error('Error al crear notificación para gestores:', error);
+            return [];
+        }
+    }
+
+    // ======= NOTIFICACIONES PARA DENUNCIAS =======
+
+    // Notificación cuando una denuncia es resuelta
+    static async createComplaintResolvedNotification(admin, reporterId, complaintId, resolutionMessage) {
+        try {
+            return await Notification.createNotification({
+                user: reporterId,
+                type: 'system',
+                title: 'Tu denuncia ha sido resuelta',
+                content: `${admin.name} ${admin.surname} ha revisado tu denuncia. ${resolutionMessage}`,
+                link: '/admin/errores',
+                relatedId: complaintId,
+                relatedModel: 'ErrorReport',
+                from: admin._id,
+                priority: 'high'
+            });
+        } catch (error) {
+            console.error('Error al crear notificación de denuncia resuelta:', error);
+            return null;
+        }
+    }
+
+    // Notificación de advertencia a usuario denunciado
+    static async createUserWarningNotification(admin, userId, warningMessage) {
+        try {
+            console.log('=== createUserWarningNotification ===');
+            console.log('Admin:', admin.name, admin.surname, admin._id);
+            console.log('User ID:', userId);
+            console.log('Warning message:', warningMessage);
+            return await Notification.createNotification({
+                user: userId,
+                type: 'system',
+                title: 'Advertencia de Administración',
+                content: warningMessage,
+                link: '/perfil',
+                from: admin._id,
+                priority: 'high'
+            });
+        } catch (error) {
+            console.error('Error al crear notificación de advertencia:', error);
+            return null;
+        }
+    }
+
+    // 27. Notificación a administradores y gestores cuando una lección se marca como completada
+    static async createLessonCompletedNotification(lessonLeader, lessonId, lessonTitle) {
+        try {
+            const User = require('../models/user.model');
+            
+            // Obtener todos los administradores y gestores de lecciones
+            const managers = await User.find({ 
+                role: { $in: ['admin', 'delegated_admin', 'lesson_manager'] },
+                actived: true 
+            }).select('_id');
+
+            if (managers.length === 0) {
+                console.log('No hay gestores/administradores disponibles para notificar');
+                return [];
+            }
+
+            const notificationData = {
+                type: 'lesson',
+                title: 'Lección completada lista para publicación',
+                content: `${lessonLeader.name} ${lessonLeader.surname} ha marcado la lección "${lessonTitle}" como completada. Ya puedes hacerla visible en el sistema.`,
+                link: `/admin/lecciones?lesson=${lessonId}&action=publish`,
+                relatedId: lessonId,
+                relatedModel: 'Lesson',
+                from: lessonLeader._id,
+                priority: 'high'
+            };
+
+            const notifications = managers.map(manager => ({
+                user: manager._id,
+                ...notificationData
+            }));
+
+            return await Notification.insertMany(notifications);
+        } catch (error) {
+            console.error('Error al crear notificaciones de lección completada:', error);
             return [];
         }
     }

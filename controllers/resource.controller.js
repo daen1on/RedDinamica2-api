@@ -93,7 +93,12 @@ const getResourceFile = async (req, res) => {
 const deleteResource = async (req, res) => {
     const resourceId = req.params.id;
     try {
-        const resourceRemoved = await Resource.findOneAndDelete({ user: req.user.sub, _id: resourceId });
+        // Admins/delegated_admins can delete any resource; others can delete only their own
+        const isAdmin = req.user && (req.user.role === 'admin' || req.user.role === 'delegated_admin');
+        const baseFilter = { _id: resourceId };
+        const filter = isAdmin ? baseFilter : { ...baseFilter, author: req.user.sub };
+
+        const resourceRemoved = await Resource.findOneAndDelete(filter);
         if (!resourceRemoved) {
             return res.status(404).send({ message: 'Resource not found' });
         }
@@ -195,6 +200,7 @@ const rejectResource = async (req, res) => {
 
         resource.accepted = false;
         resource.visible = false;
+        resource.rejected = true;
         const resourceUpdated = await resource.save();
         
         // Crear notificación de rechazo
@@ -284,8 +290,10 @@ const getSuggestResources = async (req, res) => {
     const page = req.params.page || 1;
 
     try {
-        const total = await Resource.countDocuments({accepted: false});
-        const resources = await Resource.find({accepted: false })
+        // Excluir recursos rechazados (rejected=true)
+        const baseFilter = { accepted: false, $or: [ { rejected: { $ne: true } }, { rejected: { $exists: false } } ] };
+        const total = await Resource.countDocuments(baseFilter);
+        const resources = await Resource.find(baseFilter)
             .populate('author', 'name surname picture _id')
             .sort('name').paginate(page, ITEMS_PER_PAGE);
         return res.status(200).send({

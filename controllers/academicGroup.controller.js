@@ -7,6 +7,7 @@ const Resource = require('../models/resource.model');
 const bcrypt = require('bcryptjs');
 const { v4: uuidv4 } = require('uuid');
 const mail = require('../services/mail.service');
+const NotificationService = require('../services/notification.service');
 
 // Listar todos los grupos (solo admin o lesson_manager). Soporta filtro active=true
 exports.getAllGroups = async (req, res) => {
@@ -126,7 +127,7 @@ exports.getTeacherGroups = async (req, res) => {
 exports.getStudentGroups = async (req, res) => {
     try {
         const studentId = req.user.sub || req.user.id;
-        const groups = await AcademicGroup.find({ students: studentId })
+        const groups = await AcademicGroup.find({$or: [{students: studentId}, {teacher: studentId}]})
             .populate('teacher', 'name surname email avatar')
             .populate('students', 'name surname email avatar')
             .sort({ createdAt: -1 });
@@ -197,7 +198,7 @@ exports.updateGroup = async (req, res) => {
         }
 
         // Verificar que el usuario sea el docente del grupo
-        if (group.teacher.toString() !== teacherId && req.user.role !== 'admin') {
+        if (group.teacher.toString() !== teacherId && (req.user.role !== 'admin' && req.user.role !== 'lesson_manager')) {
             return res.status(403).json({
                 status: 'error',
                 message: 'No tienes permisos para modificar este grupo'
@@ -259,7 +260,7 @@ exports.deleteGroup = async (req, res) => {
         }
 
         // Verificar que el usuario sea el docente del grupo
-        if (group.teacher.toString() !== teacherId && req.user.role !== 'admin') {
+        if (group.teacher.toString() !== teacherId && (req.user.role !== 'admin' && req.user.role !== 'lesson_manager')) {
             return res.status(403).json({
                 status: 'error',
                 message: 'No tienes permisos para eliminar este grupo'
@@ -307,7 +308,7 @@ exports.addStudentToGroup = async (req, res) => {
         }
 
         // Verificar que el usuario sea el docente del grupo
-        if (group.teacher.toString() !== teacherId && req.user.role !== 'admin') {
+        if (group.teacher.toString() !== teacherId && (req.user.role !== 'admin' && req.user.role !== 'lesson_manager')) {
             return res.status(403).json({
                 status: 'error',
                 message: 'No tienes permisos para modificar este grupo'
@@ -351,6 +352,18 @@ exports.addStudentToGroup = async (req, res) => {
             studentBadge: true
         });
 
+        // Notificar al estudiante
+        try {
+            await NotificationService.createGroupInvitationNotification(
+                req.user,
+                studentId,
+                group._id,
+                group.name
+            );
+        } catch (notifyErr) {
+            console.error('Error creando notificación de grupo (addStudentToGroup):', notifyErr);
+        }
+
         res.status(200).json({
             status: 'success',
             message: 'Estudiante agregado al grupo exitosamente'
@@ -382,7 +395,7 @@ exports.inviteStudentByEmail = async (req, res) => {
         }
 
         // Solo docente del grupo o admin pueden invitar
-        if (group.teacher.toString() !== teacherId && req.user.role !== 'admin') {
+        if (group.teacher.toString() !== teacherId && (req.user.role !== 'admin' && req.user.role !== 'lesson_manager')) {
             return res.status(403).json({ status: 'error', message: 'No tienes permisos para modificar este grupo' });
         }
 
@@ -446,6 +459,18 @@ exports.inviteStudentByEmail = async (req, res) => {
             studentBadge: true
         });
 
+        // Notificar al estudiante (exista o recién creado)
+        try {
+            await NotificationService.createGroupInvitationNotification(
+                req.user,
+                user._id,
+                group._id,
+                group.name
+            );
+        } catch (notifyErr) {
+            console.error('Error creando notificación de grupo (inviteStudentByEmail):', notifyErr);
+        }
+
         return res.status(200).json({ status: 'success', message: 'Estudiante agregado/invitado exitosamente', data: { userId: user._id } });
     } catch (error) {
         console.error('Error al invitar/agregar estudiante:', error);
@@ -457,7 +482,7 @@ exports.inviteStudentByEmail = async (req, res) => {
 exports.removeStudentFromGroup = async (req, res) => {
     try {
         const { groupId, studentId } = req.params;
-        const teacherId = req.user.id;
+        const userId = req.user.sub || req.user.id;
 
         const group = await AcademicGroup.findById(groupId);
         if (!group) {
@@ -467,11 +492,27 @@ exports.removeStudentFromGroup = async (req, res) => {
             });
         }
 
-        // Verificar que el usuario sea el docente del grupo
-        if (group.teacher.toString() !== teacherId && req.user.role !== 'admin') {
+        // Verificar permisos:
+        // 1. El docente del grupo puede remover a cualquiera
+        // 2. Admin o lesson_manager pueden remover a cualquiera
+        // 3. Un estudiante puede removerse a sí mismo (abandonar el grupo)
+        const isTeacher = group.teacher.toString() === userId;
+        const isAdmin = req.user.role === 'admin' || req.user.role === 'lesson_manager';
+        const isSelfRemoval = userId === studentId;
+
+        if (!isTeacher && !isAdmin && !isSelfRemoval) {
             return res.status(403).json({
                 status: 'error',
-                message: 'No tienes permisos para modificar este grupo'
+                message: 'No tienes permisos para remover a este estudiante'
+            });
+        }
+
+        // Verificar que el estudiante esté en el grupo
+        const isStudentInGroup = group.students.some(id => id.toString() === studentId);
+        if (!isStudentInGroup) {
+            return res.status(404).json({
+                status: 'error',
+                message: 'El estudiante no está en este grupo'
             });
         }
 
@@ -485,9 +526,13 @@ exports.removeStudentFromGroup = async (req, res) => {
             $pull: { academicGroups: groupId }
         });
 
+        const message = isSelfRemoval 
+            ? 'Has abandonado el grupo exitosamente' 
+            : 'Estudiante removido del grupo exitosamente';
+
         res.status(200).json({
             status: 'success',
-            message: 'Estudiante removido del grupo exitosamente'
+            message: message
         });
     } catch (error) {
         console.error('Error al remover estudiante:', error);
@@ -517,7 +562,7 @@ exports.getGroupStudents = async (req, res) => {
         const userId = req.user.sub || req.user.id;
         if (group.teacher.toString() !== teacherId && 
             !group.students.includes(userId) && 
-            req.user.role !== 'admin') {
+            req.user.role !== 'admin' && req.user.role !== 'lesson_manager') {
             return res.status(403).json({
                 status: 'error',
                 message: 'No tienes permisos para ver este grupo'
@@ -525,7 +570,7 @@ exports.getGroupStudents = async (req, res) => {
         }
 
         const students = await User.find({ _id: { $in: group.students } })
-            .select('name surname email avatar academicProfile academicStatistics');
+            .select('name surname email picture academicProfile academicStatistics');
 
         res.status(200).json({
             status: 'success',
@@ -556,7 +601,7 @@ exports.getGroupStatistics = async (req, res) => {
         }
 
         // Verificar que el usuario sea el docente del grupo
-        if (group.teacher.toString() !== teacherId && req.user.role !== 'admin') {
+        if (group.teacher.toString() !== teacherId && (req.user.role !== 'admin' && req.user.role !== 'lesson_manager')) {
             return res.status(403).json({
                 status: 'error',
                 message: 'No tienes permisos para ver las estadísticas de este grupo'
@@ -632,7 +677,7 @@ exports.updateGroupPermissions = async (req, res) => {
         }
 
         // Solo el docente del grupo puede actualizar permisos
-        if (group.teacher.toString() !== userId && req.user.role !== 'admin') {
+        if (group.teacher.toString() !== userId && (req.user.role !== 'admin' && req.user.role !== 'lesson_manager')) {
             return res.status(403).json({
                 status: 'error',
                 message: 'No tienes permisos para actualizar los permisos de este grupo'
@@ -666,9 +711,10 @@ exports.updateGroupPermissions = async (req, res) => {
 
 // Verificar si un estudiante puede crear lecciones en un grupo
 exports.canStudentCreateLessons = async (req, res) => {
+    console.log("canStudentCreateLessons");
     try {
         const { groupId } = req.params;
-        const userId = req.user.id;
+        const userId = req.user.sub || req.user.id;
 
         const group = await AcademicGroup.findById(groupId);
         if (!group) {
@@ -677,21 +723,26 @@ exports.canStudentCreateLessons = async (req, res) => {
                 message: 'Grupo no encontrado'
             });
         }
-
+        console.log("group", group);
+        console.log("userId", userId);
         // Verificar si el usuario es estudiante del grupo
         const isStudent = group.students.some(studentId => studentId.toString() === userId);
-        
+        console.log("isStudent", isStudent);
         if (!isStudent) {
-            return res.json({
-                status: 'success',
-                canCreate: false,
-                message: 'No eres estudiante de este grupo'
-            });
+            const isTeacher = group.teacher.toString() === userId;
+            console.log("isTeacher", isTeacher);
+            if (!isTeacher) {
+                return res.json({
+                    status: 'success',
+                    canCreate: false,
+                    message: 'No eres estudiante de este grupo'
+                });
+            }
         }
 
         // Verificar permisos
         const canCreate = group.permissions.studentsCanCreateLessons;
-
+        console.log("canCreate", canCreate);
         res.json({
             status: 'success',
             canCreate: canCreate,
@@ -707,38 +758,153 @@ exports.canStudentCreateLessons = async (req, res) => {
 };
 
 // =====================
-// Discusión del Grupo
+// Sistema de Foro/Discusión del Grupo (Threads)
 // =====================
 
-// Obtener discusión del grupo
-exports.getDiscussion = async (req, res) => {
+// Obtener todos los threads de discusión del grupo
+exports.getDiscussionThreads = async (req, res) => {
     try {
         const { groupId } = req.params;
         const userId = req.user.sub || req.user.id;
 
         const group = await AcademicGroup.findById(groupId)
-            .populate('discussion.author', 'name surname email avatar');
+            .populate('discussionThreads.author', 'name surname email picture')
+            .populate('discussionThreads.messages.author', 'name surname email picture');
+        
         if (!group) {
             return res.status(404).json({ status: 'error', message: 'Grupo académico no encontrado' });
         }
 
         // Solo miembros del grupo, docente o admin pueden ver
-        const isMember = group.teacher.toString() === userId || group.students.some(s => s.toString() === userId) || req.user.role === 'admin';
+        const isMember = group.teacher.toString() === userId || group.students.some(s => s.toString() === userId) || req.user.role === 'admin' || req.user.role === 'lesson_manager';
         if (!isMember) {
             return res.status(403).json({ status: 'error', message: 'No tienes permisos para ver esta discusión' });
         }
 
-        return res.status(200).json({ status: 'success', data: group.discussion || [] });
+        // Inicializar thread general si no existe
+        if (!group.discussionThreads || group.discussionThreads.length === 0) {
+            group.initializeGeneralThread();
+            await group.save();
+            await group.populate('discussionThreads.author', 'name surname email picture');
+        }
+
+        // Ordenar threads: primero los pinned, luego por fecha de actualización
+        const threads = group.discussionThreads.sort((a, b) => {
+            if (a.isPinned && !b.isPinned) return -1;
+            if (!a.isPinned && b.isPinned) return 1;
+            return new Date(b.updatedAt) - new Date(a.updatedAt);
+        });
+
+        return res.status(200).json({ status: 'success', data: threads });
     } catch (error) {
-        console.error('Error al obtener discusión del grupo:', error);
+        console.error('Error al obtener threads de discusión:', error);
         return res.status(500).json({ status: 'error', message: 'Error interno del servidor' });
     }
 };
 
-// Agregar mensaje de discusión
-exports.addDiscussionMessage = async (req, res) => {
+// Crear nuevo thread de discusión
+exports.createDiscussionThread = async (req, res) => {
     try {
         const { groupId } = req.params;
+        const { title, description } = req.body;
+        const userId = req.user.sub || req.user.id;
+
+        if (!title || !title.trim()) {
+            return res.status(400).json({ status: 'error', message: 'Título requerido' });
+        }
+
+        const group = await AcademicGroup.findById(groupId);
+        if (!group) {
+            return res.status(404).json({ status: 'error', message: 'Grupo académico no encontrado' });
+        }
+
+        // Solo miembros del grupo, docente o admin pueden crear threads
+        const isTeacherOfGroup = group.teacher.toString() === userId;
+        const isStudentOfGroup = group.students.some(s => s.toString() === userId);
+        const isAdmin = req.user.role === 'admin' || req.user.role === 'delegated_admin';
+        const isMember = isTeacherOfGroup || isStudentOfGroup || isAdmin;
+        
+        console.log('[createDiscussionThread] Verificación de permisos:', {
+            userId,
+            userRole: req.user.role,
+            groupTeacher: group.teacher.toString(),
+            studentsCount: group.students.length,
+            isTeacherOfGroup,
+            isStudentOfGroup,
+            isAdmin,
+            isMember
+        });
+        
+        if (!isMember) {
+            return res.status(403).json({ 
+                status: 'error', 
+                message: 'No tienes permisos para crear threads en este grupo. Debes ser miembro del grupo.' 
+            });
+        }
+
+        const newThread = {
+            title: title.trim(),
+            description: description ? description.trim() : '',
+            author: userId,
+            isPinned: false,
+            isLocked: false,
+            messages: []
+        };
+
+        group.discussionThreads.push(newThread);
+        await group.save();
+        await group.populate('discussionThreads.author', 'name surname email picture');
+
+        return res.status(201).json({ 
+            status: 'success', 
+            message: 'Thread creado exitosamente', 
+            data: group.discussionThreads 
+        });
+    } catch (error) {
+        console.error('Error al crear thread de discusión:', error);
+        return res.status(500).json({ status: 'error', message: 'Error interno del servidor' });
+    }
+};
+
+// Obtener un thread específico con sus mensajes
+exports.getDiscussionThread = async (req, res) => {
+    try {
+        const { groupId, threadId } = req.params;
+        const userId = req.user.sub || req.user.id;
+
+        const group = await AcademicGroup.findById(groupId)
+            .populate('discussionThreads.author', 'name surname email picture')
+            .populate('discussionThreads.messages.author', 'name surname email picture');
+        
+        if (!group) {
+            return res.status(404).json({ status: 'error', message: 'Grupo académico no encontrado' });
+        }
+
+        // Solo miembros del grupo, docente o admin pueden ver
+        const isMember = group.teacher.toString() === userId || group.students.some(s => s.toString() === userId) || req.user.role === 'admin' || req.user.role === 'lesson_manager';
+        if (!isMember) {
+            return res.status(403).json({ status: 'error', message: 'No tienes permisos para ver este thread' });
+        }
+
+        let thread = group.discussionThreads.id ? group.discussionThreads.id(threadId) : null;
+        if (!thread) {
+            thread = (group.discussionThreads || []).find(t => String(t?._id) === String(threadId));
+        }
+        if (!thread) {
+            return res.status(404).json({ status: 'error', message: 'Thread no encontrado' });
+        }
+
+        return res.status(200).json({ status: 'success', data: thread });
+    } catch (error) {
+        console.error('Error al obtener thread:', error);
+        return res.status(500).json({ status: 'error', message: 'Error interno del servidor' });
+    }
+};
+
+// Agregar mensaje a un thread
+exports.addMessageToThread = async (req, res) => {
+    try {
+        const { groupId, threadId } = req.params;
         const { content } = req.body;
         const userId = req.user.sub || req.user.id;
 
@@ -752,26 +918,64 @@ exports.addDiscussionMessage = async (req, res) => {
         }
 
         // Solo miembros del grupo, docente o admin pueden publicar
-        const isMember = group.teacher.toString() === userId || group.students.some(s => s.toString() === userId) || req.user.role === 'admin';
+        const isTeacherOfGroup = group.teacher.toString() === userId;
+        const isStudentOfGroup = group.students.some(s => s.toString() === userId);
+        const isAdmin = req.user.role === 'admin' || req.user.role === 'delegated_admin';
+        const isMember = isTeacherOfGroup || isStudentOfGroup || isAdmin;
+        
+        console.log('[addMessageToThread] Verificación de permisos:', {
+            userId,
+            userRole: req.user.role,
+            groupTeacher: group.teacher.toString(),
+            studentsCount: group.students.length,
+            isTeacherOfGroup,
+            isStudentOfGroup,
+            isAdmin,
+            isMember
+        });
+        
         if (!isMember) {
-            return res.status(403).json({ status: 'error', message: 'No tienes permisos para publicar en esta discusión' });
+            return res.status(403).json({ 
+                status: 'error', 
+                message: 'No tienes permisos para publicar en este thread. Debes ser miembro del grupo.' 
+            });
         }
 
-        group.discussion.push({ content: content.trim(), author: userId });
-        await group.save();
-        await group.populate('discussion.author', 'name surname email avatar');
+        const thread = group.discussionThreads.id(threadId);
+        if (!thread) {
+            return res.status(404).json({ status: 'error', message: 'Thread no encontrado' });
+        }
 
-        return res.status(201).json({ status: 'success', message: 'Mensaje agregado', data: group.discussion });
+        if (thread.isLocked) {
+            const isTeacher = group.teacher.toString() === userId;
+            const isAdmin = req.user.role === 'admin';
+            if (!isTeacher && !isAdmin) {
+                return res.status(403).json({ status: 'error', message: 'Este thread está bloqueado' });
+            }
+        }
+
+        thread.messages.push({ content: content.trim(), author: userId });
+        thread.updatedAt = new Date();
+        await group.save();
+        await group.populate('discussionThreads.author', 'name surname email picture');
+        await group.populate('discussionThreads.messages.author', 'name surname email picture');
+
+        const updatedThread = group.discussionThreads.id(threadId);
+        return res.status(201).json({ 
+            status: 'success', 
+            message: 'Mensaje agregado', 
+            data: updatedThread 
+        });
     } catch (error) {
-        console.error('Error al agregar mensaje a discusión:', error);
+        console.error('Error al agregar mensaje al thread:', error);
         return res.status(500).json({ status: 'error', message: 'Error interno del servidor' });
     }
 };
 
-// Eliminar mensaje de discusión (docente, admin o autor)
-exports.deleteDiscussionMessage = async (req, res) => {
+// Eliminar mensaje de un thread (docente, admin o autor)
+exports.deleteMessageFromThread = async (req, res) => {
     try {
-        const { groupId, messageId } = req.params;
+        const { groupId, threadId, messageId } = req.params;
         const userId = req.user.sub || req.user.id;
 
         const group = await AcademicGroup.findById(groupId);
@@ -779,24 +983,213 @@ exports.deleteDiscussionMessage = async (req, res) => {
             return res.status(404).json({ status: 'error', message: 'Grupo académico no encontrado' });
         }
 
-        const msgIndex = group.discussion.findIndex(m => m._id.toString() === messageId);
-        if (msgIndex === -1) {
+        const thread = group.discussionThreads.id(threadId);
+        if (!thread) {
+            return res.status(404).json({ status: 'error', message: 'Thread no encontrado' });
+        }
+
+        let message = thread.messages.id ? thread.messages.id(messageId) : null;
+        if (!message) {
+            // Fallback en caso de que messages no sea un subdocument array de Mongoose
+            message = (thread.messages || []).find(m => String(m?._id) === String(messageId));
+        }
+        if (!message) {
             return res.status(404).json({ status: 'error', message: 'Mensaje no encontrado' });
         }
 
-        const message = group.discussion[msgIndex];
         const isTeacher = group.teacher.toString() === userId;
-        const isAdmin = req.user.role === 'admin';
-        const isAuthor = message.author.toString() === userId;
+        const isAdmin = req.user.role === 'admin' || req.user.role === 'lesson_manager';
+        const authorId = (message.author && message.author._id)
+            ? message.author._id.toString()
+            : String(message.author);
+        const isAuthor = authorId === userId;
         if (!isTeacher && !isAdmin && !isAuthor) {
             return res.status(403).json({ status: 'error', message: 'No tienes permisos para eliminar este mensaje' });
         }
 
-        group.discussion.splice(msgIndex, 1);
+        if (typeof message.remove === 'function') {
+            // Subdocument de Mongoose
+            message.remove();
+        } else {
+            // Array plano de objetos
+            thread.messages = (thread.messages || []).filter(m => String(m?._id) !== String(messageId));
+        }
+        thread.updatedAt = new Date();
         await group.save();
+        
         return res.status(200).json({ status: 'success', message: 'Mensaje eliminado' });
     } catch (error) {
-        console.error('Error al eliminar mensaje de discusión:', error);
+        console.error('Error al eliminar mensaje del thread:', error);
+        return res.status(500).json({ status: 'error', message: 'Error interno del servidor' });
+    }
+};
+
+// Eliminar thread completo (solo docente o admin)
+exports.deleteDiscussionThread = async (req, res) => {
+    try {
+        const { groupId, threadId } = req.params;
+        const userId = req.user.sub || req.user.id;
+
+        const group = await AcademicGroup.findById(groupId);
+        if (!group) {
+            return res.status(404).json({ status: 'error', message: 'Grupo académico no encontrado' });
+        }
+
+        const thread = group.discussionThreads.id(threadId);
+        if (!thread) {
+            return res.status(404).json({ status: 'error', message: 'Thread no encontrado' });
+        }
+
+        const isTeacher = group.teacher.toString() === userId;
+        const isAdmin = req.user.role === 'admin' || req.user.role === 'lesson_manager';
+        if (!isTeacher && !isAdmin) {
+            return res.status(403).json({ status: 'error', message: 'No tienes permisos para eliminar este thread' });
+        }
+
+        // No permitir eliminar el thread General (el primero)
+        if (thread.isPinned && thread.title === 'Conversación General') {
+            return res.status(400).json({ status: 'error', message: 'No se puede eliminar el thread General' });
+        }
+
+        // Eliminar thread de manera segura (subdocumento o array plano)
+        if (typeof thread.remove === 'function') {
+            thread.remove();
+        } else {
+            group.discussionThreads = (group.discussionThreads || []).filter(t => String(t?._id) !== String(threadId));
+        }
+        await group.save();
+        
+        return res.status(200).json({ status: 'success', message: 'Thread eliminado' });
+    } catch (error) {
+        console.error('Error al eliminar thread:', error);
+        return res.status(500).json({ status: 'error', message: 'Error interno del servidor' });
+    }
+};
+
+// Toggle pin thread (solo docente o admin)
+exports.togglePinThread = async (req, res) => {
+    try {
+        const { groupId, threadId } = req.params;
+        const userId = req.user.sub || req.user.id;
+
+        const group = await AcademicGroup.findById(groupId);
+        if (!group) {
+            return res.status(404).json({ status: 'error', message: 'Grupo académico no encontrado' });
+        }
+
+        const isTeacher = group.teacher.toString() === userId;
+        const isAdmin = req.user.role === 'admin' || req.user.role === 'lesson_manager';
+        if (!isTeacher && !isAdmin) {
+            return res.status(403).json({ status: 'error', message: 'No tienes permisos para fijar threads' });
+        }
+
+        const thread = group.discussionThreads.id(threadId);
+        if (!thread) {
+            return res.status(404).json({ status: 'error', message: 'Thread no encontrado' });
+        }
+
+        thread.isPinned = !thread.isPinned;
+        await group.save();
+        
+        return res.status(200).json({ 
+            status: 'success', 
+            message: thread.isPinned ? 'Thread fijado' : 'Thread desfijado',
+            data: { isPinned: thread.isPinned }
+        });
+    } catch (error) {
+        console.error('Error al fijar/desfijar thread:', error);
+        return res.status(500).json({ status: 'error', message: 'Error interno del servidor' });
+    }
+};
+
+// Toggle lock thread (solo docente o admin)
+exports.toggleLockThread = async (req, res) => {
+    try {
+        const { groupId, threadId } = req.params;
+        const userId = req.user.sub || req.user.id;
+
+        const group = await AcademicGroup.findById(groupId);
+        if (!group) {
+            return res.status(404).json({ status: 'error', message: 'Grupo académico no encontrado' });
+        }
+
+        const isTeacher = group.teacher.toString() === userId;
+        const isAdmin = req.user.role === 'admin' || req.user.role === 'lesson_manager';
+        if (!isTeacher && !isAdmin) {
+            return res.status(403).json({ status: 'error', message: 'No tienes permisos para bloquear threads' });
+        }
+
+        const thread = group.discussionThreads.id(threadId);
+        if (!thread) {
+            return res.status(404).json({ status: 'error', message: 'Thread no encontrado' });
+        }
+
+        thread.isLocked = !thread.isLocked;
+        await group.save();
+        
+        return res.status(200).json({ 
+            status: 'success', 
+            message: thread.isLocked ? 'Thread bloqueado' : 'Thread desbloqueado',
+            data: { isLocked: thread.isLocked }
+        });
+    } catch (error) {
+        console.error('Error al bloquear/desbloquear thread:', error);
+        return res.status(500).json({ status: 'error', message: 'Error interno del servidor' });
+    }
+};
+
+// ===== MÉTODOS ANTIGUOS (para compatibilidad) =====
+exports.getDiscussion = exports.getDiscussionThreads;
+
+exports.addDiscussionMessage = async (req, res) => {
+    // Redirigir al thread general
+    try {
+        const { groupId } = req.params;
+        const group = await AcademicGroup.findById(groupId);
+        if (!group) {
+            return res.status(404).json({ status: 'error', message: 'Grupo académico no encontrado' });
+        }
+        
+        if (!group.discussionThreads || group.discussionThreads.length === 0) {
+            group.initializeGeneralThread();
+            await group.save();
+        }
+        
+        const generalThread = group.discussionThreads[0];
+        req.params.threadId = generalThread._id;
+        return exports.addMessageToThread(req, res);
+    } catch (error) {
+        console.error('Error:', error);
+        return res.status(500).json({ status: 'error', message: 'Error interno del servidor' });
+    }
+};
+
+exports.deleteDiscussionMessage = async (req, res) => {
+    // Redirigir al método de thread
+    try {
+        const { groupId, messageId } = req.params;
+        const group = await AcademicGroup.findById(groupId);
+        if (!group) {
+            return res.status(404).json({ status: 'error', message: 'Grupo académico no encontrado' });
+        }
+        
+        // Buscar el thread que contiene el mensaje
+        let threadId = null;
+        for (const thread of group.discussionThreads) {
+            if (thread.messages.id(messageId)) {
+                threadId = thread._id;
+                break;
+            }
+        }
+        
+        if (!threadId) {
+            return res.status(404).json({ status: 'error', message: 'Mensaje no encontrado' });
+        }
+        
+        req.params.threadId = threadId;
+        return exports.deleteMessageFromThread(req, res);
+    } catch (error) {
+        console.error('Error:', error);
         return res.status(500).json({ status: 'error', message: 'Error interno del servidor' });
     }
 };

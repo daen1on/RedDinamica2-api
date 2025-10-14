@@ -73,7 +73,7 @@ const academicGroupSchema = new Schema({
     permissions: {
         studentsCanCreateLessons: {
             type: Boolean,
-            default: false
+            default: true
         },
         studentsCanEditLessons: {
             type: Boolean,
@@ -88,7 +88,59 @@ const academicGroupSchema = new Schema({
             default: true
         }
     },
-    // Discusión general del grupo
+    // Sistema de discusión con hilos/threads
+    discussionThreads: [{
+        title: {
+            type: String,
+            required: true,
+            trim: true,
+            maxlength: 150
+        },
+        description: {
+            type: String,
+            trim: true,
+            maxlength: 500
+        },
+        author: {
+            type: Schema.ObjectId,
+            ref: 'User',
+            required: true
+        },
+        isPinned: {
+            type: Boolean,
+            default: false
+        },
+        isLocked: {
+            type: Boolean,
+            default: false
+        },
+        messages: [{
+            content: {
+                type: String,
+                required: true,
+                trim: true,
+                maxlength: 2000
+            },
+            author: {
+                type: Schema.ObjectId,
+                ref: 'User',
+                required: true
+            },
+            createdAt: {
+                type: Date,
+                default: Date.now
+            }
+        }],
+        createdAt: {
+            type: Date,
+            default: Date.now
+        },
+        updatedAt: {
+            type: Date,
+            default: Date.now
+        }
+    }],
+    // Mantener discussion para compatibilidad con datos existentes
     discussion: [{
         content: {
             type: String,
@@ -148,6 +200,20 @@ academicGroupSchema.pre('save', function(next) {
     next();
 });
 
+// Método para inicializar thread general
+academicGroupSchema.methods.initializeGeneralThread = function() {
+    if (!this.discussionThreads || this.discussionThreads.length === 0) {
+        this.discussionThreads = [{
+            title: 'Conversación General',
+            description: '¡Bienvenidos al foro del grupo! Este es un espacio para compartir dudas generales, ideas y colaborar con tus compañeros. No dudes en participar, tu opinión es importante para todos. 💬',
+            author: this.teacher,
+            isPinned: true,
+            isLocked: false,
+            messages: []
+        }];
+    }
+};
+
 // Método para actualizar estadísticas del grupo
 academicGroupSchema.methods.updateStatistics = async function() {
     this.statistics.totalStudents = this.students.length;
@@ -156,10 +222,10 @@ academicGroupSchema.methods.updateStatistics = async function() {
     const lessonCount = await mongoose.model('AcademicLesson').countDocuments({ academicGroup: this._id });
     this.statistics.totalLessons = lessonCount;
     
-    // Contar lecciones activas
+    // Contar lecciones activas (todas excepto completed/graded)
     const activeLessonCount = await mongoose.model('AcademicLesson').countDocuments({ 
         academicGroup: this._id, 
-        status: 'active' 
+        status: { $nin: ['completed', 'graded'] }
     });
     this.statistics.activeLessons = activeLessonCount;
     
