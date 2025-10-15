@@ -1,34 +1,29 @@
 import re
 import os
 
+
 def has_nonce_already(html_content):
-    # Check if nonce="{{nonce}}" is already present in <script> and <style> tags
-    script_nonce = re.search(r'<script\s+[^>]*nonce="{{nonce}}"', html_content)
-    style_nonce = re.search(r'<style\s+[^>]*nonce="{{nonce}}"', html_content)
-    return script_nonce or style_nonce
+    # Detect any existing nonce attribute in <script> or <style> tags (any template syntax)
+    return re.search(r'<(script|style)\s+[^>]*nonce\s*=\s*"', html_content, re.IGNORECASE) is not None
+
 
 def add_nonce_to_scripts_and_styles(html_content):
-    # Define the regex patterns to match <script src="..."> and <style> tags
-    script_pattern = re.compile(r'(<script\s+[^>]*src="[^"]+"[^>]*)(?<!nonce="{{nonce}}")([^>]*>)')
-    style_pattern = re.compile(r'(<style\s+[^>]*)(?<!nonce="{{nonce}}")([^>]*>)')
+    # Add nonce to <script src> and <style> tags only when they don't already have a nonce attribute
+    script_pattern = re.compile(r'(<script\s+(?:(?![^>]*nonce\s*=)[^>])*src="[^"]+"[^>]*)(>)', re.IGNORECASE)
+    style_pattern = re.compile(r'(<style\s+(?:(?![^>]*nonce\s*=)[^>])*)(>)', re.IGNORECASE)
 
-    # Add nonce="{{nonce}}" to the matched patterns
-    updated_html_content = re.sub(script_pattern, r'\1 nonce="{{nonce}}"\2', html_content)
-    updated_html_content = re.sub(style_pattern, r'\1 nonce="{{nonce}}"\2', updated_html_content)
+    updated_html_content = re.sub(script_pattern, r'\1 nonce="<%= nonce %>"\2', html_content)
+    updated_html_content = re.sub(style_pattern, r'\1 nonce="<%= nonce %>"\2', updated_html_content)
 
     return updated_html_content
+
 
 def process_html_file(file_path):
     # Read the HTML content from the file
     with open(file_path, 'r', encoding='utf-8') as file:
         html_content = file.read()
 
-    # Check if the process has already been done
-    if has_nonce_already(html_content):
-        print("Process already done.")
-        return
-
-    # Apply the updates
+    # Apply the updates idempotently (adds nonce only where missing)
     updated_html_content = add_nonce_to_scripts_and_styles(html_content)
 
     # Write the updated HTML content back to the file
@@ -36,9 +31,23 @@ def process_html_file(file_path):
         file.write(updated_html_content)
     print(f"Updated: {file_path}")
 
+
 if __name__ == "__main__":
-    # Define the path to the index.html file
-    file_path = os.path.join(os.path.dirname(__file__), '../client/index.html')
+    # Resolve candidate paths to index.html
+    base_dir = os.path.dirname(__file__)
+    candidates = [
+        os.path.normpath(os.path.join(base_dir, '../client/browser/index.html')),
+        os.path.normpath(os.path.join(base_dir, '../client/index.html')),
+    ]
+
+    target_path = None
+    for candidate in candidates:
+        if os.path.exists(candidate):
+            target_path = candidate
+            break
+
+    if not target_path:
+        raise FileNotFoundError(f"No se encontró index.html. Rutas probadas: {', '.join(candidates)}")
 
     # Process the HTML file
-    process_html_file(file_path)
+    process_html_file(target_path)

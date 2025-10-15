@@ -23,7 +23,7 @@ transporter.verify(function(error, success) {
   });
 
 let mailOptions = function (subject, recipients, message) {
-    let imagePath = path.join(__dirname, '../client/assets/images/');
+    let imagePath = path.join(__dirname, '../client/browser/assets/images/');
     
     return {
         from: `RedDinámica <${process.env.EMAIL_HOST_USER}>`,

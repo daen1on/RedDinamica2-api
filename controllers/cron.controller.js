@@ -65,7 +65,7 @@ async function sendDigestToUser(user) {
 async function sendDigestEmail(recipient, subject, htmlContent) {
     return new Promise((resolve, reject) => {
         const nodemailer = require('nodemailer');
-        const imagePath = path.join(__dirname, '../client/assets/images/');
+        const imagePath = path.join(__dirname, '../client/browser/assets/images/');
         
         const transporter = nodemailer.createTransport({
             service: process.env.EMAIL_SERVICE,

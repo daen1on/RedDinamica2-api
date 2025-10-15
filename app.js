@@ -9,6 +9,9 @@ const path = require('path');
 const app = express();
 const nonce = crypto.randomBytes(32).toString("hex");
 const trusted = ["'self'"];
+// Configure view engine to render .html files using EJS and set views directory
+app.engine('html', require('ejs').renderFile);
+app.set('views', path.join(__dirname, 'client', 'browser'));
 // Middleware to set 'x-content-type-options' header
 app.use((req, res, next) => {
   res.setHeader('X-Content-Type-Options', 'nosniff');
@@ -23,6 +26,10 @@ app.get('/*.js', (req, res, next) => {
 
 app.set('view engine', 'ejs');
 app.use(express.static(path.join(__dirname, 'client'))); // Serve static files first
+// Serve Angular browser output under base href /reddinamica2
+app.use('/reddinamica2', express.static(path.join(__dirname, 'client', 'browser'), { redirect: false }));
+// Also serve browser output at root in case a reverse proxy strips the base path
+app.use('/', express.static(path.join(__dirname, 'client', 'browser'), { redirect: false }));
 
 app.get('/', (req, res) => {
   res.render('index.html', { nonce }); // Pass nonce to the template
@@ -189,8 +196,9 @@ app.use('/api', adminRoutes);
 app.use('/api/cron', cronRoutes);
 
 // Rewrite url
-app.use('*', function(req, res, next){
-    res.sendFile(path.resolve('client/index.html'));
+// SPA fallback only for the reddinamica2 base path
+app.get(['/reddinamica2', '/reddinamica2/*'], function(req, res){
+  res.render('index.html', { nonce });
 });
 
 // Export

@@ -1,0 +1,96 @@
+{
+  "name": "RedDinámica - Plataforma Educativa",
+  "short_name": "RedDinámica",
+  "description": "Plataforma educativa para la enseñanza de dinámica de sistemas con herramientas académicas integradas",
+  "version": "1.0.0",
+  "manifest_version": 3,
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "theme_color": "#2c3e50",
+  "background_color": "#ffffff",
+  "lang": "es",
+  "dir": "ltr",
+  "categories": [
+    "education",
+    "productivity",
+    "social"
+  ],
+  "icons": [
+    {
+      "src": "assets/icons/manifest-icon-192.maskable.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "assets/icons/manifest-icon-192.maskable.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "maskable"
+    },
+    {
+      "src": "assets/icons/manifest-icon-512.maskable.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "assets/icons/manifest-icon-512.maskable.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Academia",
+      "short_name": "Academia",
+      "description": "Acceso directo al módulo académico",
+      "url": "/academia"
+    },
+    {
+      "name": "Publicaciones",
+      "short_name": "Posts",
+      "description": "Ver publicaciones de la comunidad",
+      "url": "/feed"
+    },
+    {
+      "name": "Perfil",
+      "short_name": "Perfil",
+      "description": "Ver mi perfil",
+      "url": "/profile"
+    },
+    {
+      "name": "Recursos",
+      "short_name": "Recursos",
+      "description": "Explorar recursos educativos",
+      "url": "/resources"
+    }
+  ],
+  "prefer_related_applications": false,
+  "related_applications": [],
+  "edge_side_panel": {
+    "preferred_width": 400
+  },
+  "handle_links": "preferred",
+  "launch_handler": {
+    "client_mode": "navigate-existing"
+  },
+  "protocol_handlers": [
+    {
+      "protocol": "web+reddinamica",
+      "url": "/share?url=%s"
+    }
+  ],
+  "share_target": {
+    "action": "/share",
+    "method": "GET",
+    "params": {
+      "title": "title",
+      "text": "text",
+      "url": "url"
+    }
+  }
+}
