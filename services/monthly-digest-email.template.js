@@ -317,7 +317,7 @@ exports.generateDigestEmail = function(digestData) {
                 <p style="margin: 0 0 15px 0; color: #2C3E50; font-size: 16px; font-weight: 600;">
                     ${hasActivity ? '¡No te pierdas nada!' : '¡Vuelve a RedDinámica!'}
                 </p>
-                <a href="${process.env.URL || 'http://localhost:4200'}" class="cta-button">
+                <a href="${process.env.HASH_URL || 'http://localhost:4200/#/'}" class="cta-button">
                     Visitar RedDinámica
                 </a>
             </div>
@@ -329,7 +329,7 @@ exports.generateDigestEmail = function(digestData) {
                 </p>
                 <p style="margin: 0; font-size: 12px; opacity: 0.8;">
                     Recibes este email porque eres parte activa de nuestra comunidad.<br>
-                    Si no deseas recibir estos resúmenes mensuales, <a href="${process.env.URL}/configuracion">actualiza tus preferencias</a>.
+                    Si no deseas recibir estos resúmenes mensuales, <a href="${process.env.HASH_URL}/configuracion">actualiza tus preferencias</a>.
                 </p>
             </div>
         </div>

@@ -1,11 +1,11 @@
 const mongoose = require("mongoose");
-const Lesson = require("./models/lesson.model"); // Your Lesson model
+const Lesson = require("../models/lesson.model"); // Your Lesson model
 
 async function migrateLessons() {
   const dbHost = process.env.MONGO_HOST;
   const dbPort = process.env.MONGO_PORT;
   const dbName = process.env.MONGO_DB;
-  const connectionString = `mongodb://<span class="math-inline">\{dbHost\}\:</span>{dbPort}/${dbName}`; // Construct connection string
+  const connectionString = `mongodb://${dbHost}:${dbPort}/${dbName}`;
   try {
     await mongoose.connect(connectionString);
     console.log("Connected to MongoDB");

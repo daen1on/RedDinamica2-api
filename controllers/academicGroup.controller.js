@@ -423,7 +423,7 @@ exports.inviteStudentByEmail = async (req, res) => {
 
             // Enviar correo con acceso
             try {
-                const baseUrl = process.env.NODE_ENV === 'production' ? (process.env.URL || '') : 'http://localhost:4200';
+                const baseUrl = process.env.NODE_ENV === 'production' ? (process.env.HASH_URL || '') : 'http://localhost:4200';
                 const loginUrl = `${baseUrl}/login`;
                 await mail.sendMail(
                     'Invitación a RedDinámica Académica',

@@ -1,182 +1,153 @@
-'use strict'
+'use strict';
 
-// app.js has all the set up for express
-const helmet = require('helmet');
 const express = require('express');
-const crypto = require('crypto');
 const path = require('path');
+const crypto = require('crypto');
+const helmet = require('helmet');
+const cors = require('cors');
 
+// =================================================================
+// App Initialization
+// =================================================================
 const app = express();
-const nonce = crypto.randomBytes(32).toString("hex");
-const trusted = ["'self'"];
-// Configure view engine to render .html files using EJS and set views directory
+
+// =================================================================
+// View Engine Configuration
+// =================================================================
+// Configure EJS to render .html files and set the views directory.
 app.engine('html', require('ejs').renderFile);
 app.set('views', path.join(__dirname, 'client', 'browser'));
-// Middleware to set 'x-content-type-options' header
+app.set('view engine', 'html');
+
+// =================================================================
+// Security Middleware
+// =================================================================
+
+// --- 1. Per-Request Nonce Generation ---
+// A unique nonce must be generated for each request to make the CSP effective.
 app.use((req, res, next) => {
-  res.setHeader('X-Content-Type-Options', 'nosniff');
-  next();
-});
-// Serve JavaScript files with the correct MIME type
-app.get('/*.js', (req, res, next) => {
-  res.type('application/javascript');
-  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.locals.nonce = crypto.randomBytes(16).toString('hex');
   next();
 });
 
-app.set('view engine', 'ejs');
-app.use(express.static(path.join(__dirname, 'client'))); // Serve static files first
-// Serve Angular browser output under base href /reddinamica2
-app.use('/reddinamica2', express.static(path.join(__dirname, 'client', 'browser'), { redirect: false }));
-// Also serve browser output at root in case a reverse proxy strips the base path
-app.use('/', express.static(path.join(__dirname, 'client', 'browser'), { redirect: false }));
-
-app.get('/', (req, res) => {
-  res.render('index.html', { nonce }); // Pass nonce to the template
-});
-
+// --- 2. Helmet for Security Headers ---
+// Sets various security headers to help protect the app from common vulnerabilities.
+// The CSP is configured to use the per-request nonce.
+const trustedSources = ["'self'"];
 if (process.env.NODE_ENV !== 'production') {
-  trusted.push('http://localhost:4200/*', 'ws://localhost:*');
+  // Allow connections for local development and live reload.
+  trustedSources.push('http://localhost:4200', 'ws://localhost:*');
 }
 
-app.get('/*.css', (req, res) => {
-  res.setHeader('Content-Type', 'text/css');
-  res.setHeader('X-Content-Type-Options', 'nosniff');
-});
-
 app.use(
-  helmet.contentSecurityPolicy({
-    directives: {
-      defaultSrc: trusted,
-      scriptSrc: [
-        "'strict-dynamic'",
-        'https://cdnjs.cloudflare.com',
-        'https://kit.fontawesome.com',
-        'https://fonts.googleapis.com',
-        `'nonce-${nonce}'`,
-      ].concat(trusted),
-      styleSrc: [
-        'https://fonts.googleapis.com',
-        'https://cdnjs.cloudflare.com',
-        'https://fonts.gstatic.com',
-        `'nonce-${nonce}'`,
-
-      ].concat(trusted),
-      fontSrc: [
-        'https://*.cloudflare.com',
-        'https://*.gstatic.com',
-        'https://*.googleapis.com',
-        'https://*.fontawesome.com',
-        'data:', // Allowing data URIs for fonts
-      ].concat(trusted),
-      scriptSrcAttr: [].concat(trusted),
-      connectSrc: [
-        'https://simon.uis.edu.co',
-        'https://fonts.gstatic.com', // Allowing preconnect for fonts.gstatic.com
-      ].concat(trusted),
-      imgSrc: ['data:'].concat(trusted),
-      frameAncestors: ["'none'"],
-      objectSrc: ["'none'"],
+  helmet({
+    contentSecurityPolicy: {
+      directives: {
+        defaultSrc: trustedSources,
+        scriptSrc: [
+          // "'strict-dynamic'", // REMOVED: This conflicts with loading scripts like Font Awesome directly.
+          'https://cdnjs.cloudflare.com',
+          'https://kit.fontawesome.com',
+          // Use a function to dynamically apply the nonce for each request.
+          (req, res) => `'nonce-${res.locals.nonce}'`,
+        ].concat(trustedSources),
+        scriptSrcAttr: ["'unsafe-inline'"], // ADDED: Allow inline event handlers like onerror/onload.
+        styleSrc: [
+          'https://fonts.googleapis.com',
+          'https://cdnjs.cloudflare.com',
+          'https://fonts.gstatic.com',
+          "'unsafe-inline'", // Note: Review if this is truly needed.
+        ].concat(trustedSources),
+        fontSrc: [
+          'https://*.cloudflare.com',
+          'https://*.gstatic.com',
+          'https://*.googleapis.com',
+          'https://*.fontawesome.com',
+          'data:',
+        ].concat(trustedSources),
+        connectSrc: [
+          'https://simon.uis.edu.co',
+          'https://ka-f.fontawesome.com', // ADDED: Allow Font Awesome to fetch its assets.
+        ].concat(trustedSources),
+        imgSrc: ['data:'].concat(trustedSources),
+        frameAncestors: ["'none'"],
+        objectSrc: ["'none'"],
+        baseUri: ["'self'"],
+      },
+    },
+    hsts: {
+      maxAge: 31536000, // 1 year
+      includeSubDomains: true,
+      preload: true,
     },
   })
 );
 
-//debug
-app.use((req, res, next) => {
-  if (process.env.NODE_ENV !== 'production') {
-    console.log('Incoming Request:', req.method, req.path);
-    console.log('Headers:', req.headers);
-  }
-  next();
-});
 
+// --- 3. CORS Configuration ---
+// Configure Cross-Origin Resource Sharing.
+const allowedOrigins = [
+  'http://localhost:3800',
+  'http://localhost:4200',
+  'https://localhost:4200',
+  'https://simon.uis.edu.co',
+];
 
-//cors
-var cors = require('cors');
-var corsOptions = {
-  origin: function (origin, callback) {
-    // Permitir requests sin origin (como Postman) y los orígenes específicos
-    const allowedOrigins = [
-      'http://localhost:3800',
-      'http://localhost:4200', 
-      'https://localhost:4200',
-      'https://simon.uis.edu.co'
-    ];
-    
-    if (!origin || allowedOrigins.indexOf(origin) !== -1) {
+const corsOptions = {
+  origin: (origin, callback) => {
+    // Allow server-to-server requests (no origin) and origins from the allowed list.
+    if (!origin || allowedOrigins.includes(origin)) {
       callback(null, true);
     } else {
-      console.log('CORS blocked origin:', origin);
+      console.warn(`CORS blocked origin: ${origin}`);
       callback(new Error('Not allowed by CORS'));
     }
   },
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
-  credentials: true, // Permitir cookies y headers de autenticación
-  optionsSuccessStatus: 204, // some legacy browsers (IE11, various SmartTVs) choke on 204
+  credentials: true,
+  optionsSuccessStatus: 204, // For legacy browser compatibility.
 };
-
-// var corsOptions = {
-// //  origin: ['https://simon.uis.edu.co', 'https://simon.uis.edu.co/reddinamica', 'http://localhost:4200/*', 'https://localhost:4200/*','*'],
-// origin:['http://localhost:4200/*','*'],  
-// methods: 'GET,POST,PUT,DELETE,PATCH,OPTIONS',
-// allowedHeaders: ['Content-Type', 'Authorization'],
-// optionsSuccessStatus: 204, // 200; some legacy browsers (IE11, various SmartTVs) choke on 204
-// }
-// Load routes
-let institutionRoutes = require('./routes/institution.routes');
-let cityRoutes = require('./routes/city.routes');
-let knowledgeAreaRoutes = require('./routes/knowledgeArea.routes');
-let professionRoutes = require('./routes/profession.routes');
-let followRoutes = require('./routes/follow.routes');
-let publicationRoutes = require('./routes/publication.routes');
-let commentRoutes = require('./routes/comment.routes');
-let messageRoutes = require('./routes/message.routes');
-let resourceRoutes = require('./routes/resource.routes');
-let lessonRoutes = require('./routes/lesson.routes');
-let userRoutes = require('./routes/user.routes');
-let errorReportRoutes = require('./routes/errorReports.routes');
-let notificationRoutes = require('./routes/notification.routes');
-let academicGroupRoutes = require('./routes/academicGroup.routes');
-let academicLessonRoutes = require('./routes/academicLesson.routes');
-let adminRoutes = require('./routes/admin.routes');
-let cronRoutes = require('./routes/cron.routes');
-
-// Middlewares
-app.use(express.urlencoded({ extended: false })); //Parse URL-encoded bodies
-app.use(express.json({limit:"20000kb"})); 
-
-// Middleware para manejar preflight requests
-app.use((req, res, next) => {
-  if (req.method === 'OPTIONS') {
-    res.header('Access-Control-Allow-Origin', req.headers.origin || '*');
-    res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, PATCH, OPTIONS');
-    res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With');
-    res.header('Access-Control-Allow-Credentials', 'true');
-    return res.status(204).end();
-  }
-  next();
-});
-
-// Cors
 app.use(cors(corsOptions));
-// x-frame option
-// ...
 
 
+// =================================================================
+// Body Parsers & Logging
+// =================================================================
+// Parse JSON and URL-encoded request bodies.
+app.use(express.json({ limit: '20mb' }));
+app.use(express.urlencoded({ extended: false }));
 
+// Simple request logger for development.
+if (process.env.NODE_ENV !== 'production') {
+  app.use((req, res, next) => {
+    console.log(`[${new Date().toISOString()}] ${req.method} ${req.originalUrl}`);
+    next();
+  });
+}
 
-app.use(helmet.hsts({
-  maxAge: 31536000, // 1 año en segundos
-  includeSubDomains: true,
-  preload: true,
-}));
+// =================================================================
+// API Routes
+// =================================================================
+// Group all API routes under the '/api' prefix.
+const cityRoutes = require('./routes/city.routes');
+const institutionRoutes = require('./routes/institution.routes');
+const knowledgeAreaRoutes = require('./routes/knowledgeArea.routes');
+const professionRoutes = require('./routes/profession.routes');
+const followRoutes = require('./routes/follow.routes');
+const publicationRoutes = require('./routes/publication.routes');
+const commentRoutes = require('./routes/comment.routes');
+const messageRoutes = require('./routes/message.routes');
+const resourceRoutes = require('./routes/resource.routes');
+const lessonRoutes = require('./routes/lesson.routes');
+const userRoutes = require('./routes/user.routes');
+const errorReportRoutes = require('./routes/errorReports.routes');
+const notificationRoutes = require('./routes/notification.routes');
+const academicGroupRoutes = require('./routes/academicGroup.routes');
+const academicLessonRoutes = require('./routes/academicLesson.routes');
+const adminRoutes = require('./routes/admin.routes');
+const cronRoutes = require('./routes/cron.routes');
 
-
-// Static route
-app.use('/', express.static('client', {redirect:false}));
-
-// Routes
 app.use('/api', cityRoutes);
 app.use('/api', institutionRoutes);
 app.use('/api', knowledgeAreaRoutes);
@@ -188,18 +159,41 @@ app.use('/api', messageRoutes);
 app.use('/api', resourceRoutes);
 app.use('/api', lessonRoutes);
 app.use('/api', userRoutes);
-app.use('/api', errorReportRoutes); 
+app.use('/api', errorReportRoutes);
 app.use('/api', notificationRoutes);
 app.use('/api/academic-groups', academicGroupRoutes);
 app.use('/api/academic-lessons', academicLessonRoutes);
 app.use('/api', adminRoutes);
 app.use('/api/cron', cronRoutes);
 
-// Rewrite url
-// SPA fallback only for the reddinamica2 base path
-app.get(['/reddinamica2', '/reddinamica2/*'], function(req, res){
-  res.render('index.html', { nonce });
+
+// =================================================================
+// Static File Server & SPA Fallback
+// =================================================================
+// --- 1. Serve static files specifically for the /reddinamica2 base path ---
+// This is crucial for Angular apps with a `base href`. It tells Express to
+// look in the 'client/browser' directory for any request starting with '/reddinamica2'.
+app.use('/reddinamica2', express.static(path.join(__dirname, 'client', 'browser')));
+
+// --- 2. Serve static files from the root as well ---
+// This handles any other static assets that might be at the root, like favicon.ico.
+app.use(express.static(path.join(__dirname, 'client', 'browser')));
+
+
+// --- 3. SPA Fallback ---
+// For all other GET requests that are not static files, send the index.html file.
+// This is essential for a Single Page Application (SPA) where client-side
+// routing is handled by Angular. It ensures that refreshing a page or
+// navigating directly to a deep link (e.g., /users/profile) still loads the app.
+app.get('*', (req, res) => {
+  // Pass the unique, per-request nonce to the template.
+  res.render('index.html', { nonce: res.locals.nonce });
 });
 
-// Export
+
+// =================================================================
+// Export App
+// =================================================================
 module.exports = app;
+
+

@@ -1520,16 +1520,31 @@ exports.moveToRedDinamica = async (req, res) => {
         })) : [];
 
         console.log('📁 [moveToRedDinamica] Archivos mapeados:', mappedFiles.length);
+        console.log('📊 [moveToRedDinamica] Development group:', al.development_group);
+        const userIds = [];
 
+        // Add a check to ensure 'al.development_group' is an array before looping.
+        if (Array.isArray(al.development_group)) {
+        for (const member of al.development_group) {
+            // 3. Safely access the user's ID and push it to the array.
+            if (member && member.user && member.user._id) {
+                userIds.push(member.user._id);
+            }
+        }
+    }
+
+    console.log('✅ Collected User IDs:', userIds);
+        
         // Mapear áreas de conocimiento - buscar ObjectIds por nombre si es necesario
         let knowledgeAreaIds = [];
+
+
         if (Array.isArray(al.knowledge_areas) && al.knowledge_areas.length > 0) {
             const KnowledgeArea = require('../models/knowledge-area.model');
             
             // Separar ObjectIds ya válidos de strings (nombres)
             const validIds = [];
             const nameStrings = [];
-            
             for (const ka of al.knowledge_areas) {
                 if (ka && ka._id) {
                     // Ya es un objeto con _id
@@ -1604,6 +1619,7 @@ exports.moveToRedDinamica = async (req, res) => {
             state: 'completed',
             type: 'academic',
             author: al.author?._id || al.author, // El author académico se mantiene como author
+            development_group: userIds,
             leader: al.leader?._id || al.leader, // El leader académico se mantiene como leader
             expert: al.teacher?._id || al.teacher, // El teacher académico se convierte en expert
             created_at: new Date().toISOString(),

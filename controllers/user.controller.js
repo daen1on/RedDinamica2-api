@@ -259,8 +259,9 @@ const recoverPassword = async (req, res) => {
         const token = crypto.randomBytes(32).toString('hex');
         const expires = new Date(Date.now() + 3600000); // El token expira en 1 hora
         const resetPasswordUrl = process.env.NODE_ENV === 'production'
-        ? process.env.URL
-        : process.env.RESET_PASSWORD_URL_DEV;
+        ? process.env.HASH_URL + process.env.RESET_PASSWORD_URL
+        : "http://localhost:4200/#/" + process.env.RESET_PASSWORD_URL;
+
         user.resetPasswordToken = token;
         user.resetPasswordExpires = expires;
 
