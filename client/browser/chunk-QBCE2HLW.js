@@ -1,1 +1,0 @@
-import{a}from"./chunk-AXXTFCNA.js";import"./chunk-YM3PCZES.js";import"./chunk-ZTCIQEDA.js";import"./chunk-TLWJFQ3M.js";import"./chunk-WESTYKRX.js";import"./chunk-H2O7B6BZ.js";import"./chunk-M6MDGVAZ.js";import"./chunk-GWDAXWU7.js";import"./chunk-3BHHYQXT.js";export{a as GroupDetailComponent};

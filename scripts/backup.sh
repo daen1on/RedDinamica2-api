@@ -16,8 +16,7 @@ if [ "$ACTION" == "dump" ]; then
     mkdir -p $BACKUP_DIR
 
     # Run mongodump on the reddinamica_mongo container
-    docker exec reddinamica_db mongodump --out $BACKUP_DIR
-
+    docker exec reddinamica_db mongorestore --db reddinamica --drop --dir $RESTORE_DIR
     # Check if the mongodump process was successful
     if [ $? -eq 0 ]; then
         echo "mongodump process completed successfully."

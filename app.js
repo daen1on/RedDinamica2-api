@@ -98,7 +98,7 @@ if (process.env.NODE_ENV !== 'production') {
   });
 }
 
-const apiPrefix = '/reddinamica2/api';
+const apiPrefix = '/reddinamica/api';
 const cityRoutes = require('./routes/city.routes');
 const institutionRoutes = require('./routes/institution.routes');
 const knowledgeAreaRoutes = require('./routes/knowledgeArea.routes');
@@ -135,14 +135,14 @@ app.use(`${apiPrefix}/academic-lessons`, academicLessonRoutes);
 app.use(apiPrefix, adminRoutes);
 app.use(`${apiPrefix}/cron`, cronRoutes);
 
-app.use('/reddinamica2', express.static(path.join(__dirname, 'client', 'browser')));
+app.use('/reddinamica', express.static(path.join(__dirname, 'client', 'browser')));
 
-app.get('/reddinamica2/*', (req, res) => {
+app.get('/reddinamica/*', (req, res) => {
   res.render('index.html', { nonce: res.locals.nonce });
 });
 
 app.get('/', (req, res) => {
-  res.redirect('/reddinamica2/');
+  res.redirect('/reddinamica/');
 });
 
 module.exports = app;
