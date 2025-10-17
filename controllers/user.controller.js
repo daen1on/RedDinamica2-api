@@ -477,11 +477,18 @@ const deleteUser = async (req, res) => {
         await Follow.deleteMany({ $or: [{ followed: userId }, { user: userId }] });
         await Publication.deleteMany({ user: userId });
 
-        // Ejecutar limpieza de referencias huérfanas en otros modelos
+        // Ejecutar limpieza de referencias huérfanas en segundo plano (no bloquear respuesta)
         try {
-            await cleanupUserReferences(userId);
-        } catch (cleanupErr) {
-            winston.warn('cleanupUserReferences failed:', cleanupErr);
+            setImmediate(async () => {
+                try {
+                    const result = await cleanupUserReferences(userId);
+                    winston.info('cleanupUserReferences completed', { userId, result });
+                } catch (cleanupErr) {
+                    winston.warn('cleanupUserReferences failed', cleanupErr);
+                }
+            });
+        } catch (scheduleErr) {
+            winston.warn('Failed to schedule cleanupUserReferences', scheduleErr);
         }
 
         return res.status(200).send({ user: userRemoved });
