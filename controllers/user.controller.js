@@ -25,6 +25,7 @@ let Publication = require('../models/publication.model');
 const Institution = require('../models/institution.model'); 
 const Profession = require('../models/profession.model'); 
 const Lesson = require('../models/lesson.model');
+const { cleanupUserReferences } = require('../scripts/cleanup-orphan-user-refs');
 
 // Constant
 const { ITEMS_PER_PAGE } = require('../config');
@@ -475,6 +476,13 @@ const deleteUser = async (req, res) => {
 
         await Follow.deleteMany({ $or: [{ followed: userId }, { user: userId }] });
         await Publication.deleteMany({ user: userId });
+
+        // Ejecutar limpieza de referencias huérfanas en otros modelos
+        try {
+            await cleanupUserReferences(userId);
+        } catch (cleanupErr) {
+            winston.warn('cleanupUserReferences failed:', cleanupErr);
+        }
 
         return res.status(200).send({ user: userRemoved });
     } catch (err) {

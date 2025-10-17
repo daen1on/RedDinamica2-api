@@ -11,4 +11,5 @@ var knowledgeAreaSchema = schema({
 
 knowledgeAreaSchema.plugin(mongoosePaginate);
 
-module.exports = mongoose.model('KnowledgeArea', knowledgeAreaSchema);
+// Force collection name to 'knowledge-areas' to match existing DB naming
+module.exports = mongoose.model('KnowledgeArea', knowledgeAreaSchema, 'knowledge-areas');

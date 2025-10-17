@@ -3,7 +3,9 @@
 // usar en caso de que un usuario haya sido eliminado y quede referencias en otros modelos
 'use strict';
 
-require('dotenv').config();
+const path = require('path'); // <-- 1. Import path module
+// 2. Point to the .env file in the parent directory (project root)
+require('dotenv').config({ path: path.resolve(__dirname, '../.env') });
 
 const mongoose = require('mongoose');
 
@@ -21,14 +23,17 @@ const ErrorReport = require('../models/errorReport.model');
 const NewModel = require('../models/new.model');
 
 async function connect() {
-    const { MONGO_HOST, MONGO_PORT, MONGO_DB } = process.env;
+    const MONGO_HOST = process.env.MONGO_HOST;
+    const MONGO_PORT = process.env.MONGO_PORT;
+    const MONGO_DB = process.env.MONGO_DB;
     const uri = `mongodb://${MONGO_HOST}:${MONGO_PORT}/${MONGO_DB}?authSource=admin`;
+    console.log(`[cleanup-orphan-user-refs] Connecting to ${uri}`);
     await mongoose.connect(uri, { family: 4 });
 }
 
 function toObjectId(id) {
     try {
-        return new mongoose.Types.ObjectId(id);
+        return mongoose.Types.ObjectId(id);
     } catch {
         return null;
     }

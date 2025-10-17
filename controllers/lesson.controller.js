@@ -1040,7 +1040,7 @@ const getAllCalls = async (req, res) => {
 const getExperiences = async (req, res) => {
     const page = parseInt(req.query.page) || 1;
     try {
-        const lessons = await Lesson.paginate({ development_level: { $ne: null }, type: { $ne: null }, accepted: false }, { page, limit: ITEMS_PER_PAGE });
+        const lessons = await Lesson.paginate({  type: { $ne: null }, accepted: false }, { page, limit: ITEMS_PER_PAGE });
         sendPaginatedResponse(res, lessons);
     } catch (err) {
         handleError(res, 'Error fetching experiences');
