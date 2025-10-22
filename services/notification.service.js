@@ -11,7 +11,7 @@ class NotificationService {
             type: 'message',
             title: 'Nuevo mensaje',
             content: `${fromUser.name} ${fromUser.surname} te ha enviado un mensaje`,
-            link: `/messages/${messageId}`,
+            link: `/mensajes/${messageId}`,
             relatedId: messageId,
             relatedModel: 'Message',
             from: fromUser._id,
@@ -57,16 +57,16 @@ class NotificationService {
             type: 'lesson',
             title: 'Nuevo mensaje en lección',
             content: `${fromUser.name} ${fromUser.surname} escribió en "${lessonTitle}": "${messageText.substring(0, 50)}${messageText.length > 50 ? '...' : ''}"`,
-            link: `/lessons/${lessonId}`,
+            link: `/inicio/leccion/${lessonId}`,
             relatedId: lessonId,
             relatedModel: 'Lesson',
             from: fromUser._id,
             priority: 'medium'
         };
-
+      
         // Notificar a todos los participantes excepto al autor del mensaje
         const participantsToNotify = lessonParticipants.filter(userId => 
-            userId.toString() !== fromUser._id.toString()
+            userId.toString() !== fromUser.sub.toString()
         );
 
         const notifications = participantsToNotify.map(userId => ({
@@ -84,7 +84,7 @@ class NotificationService {
             type: 'lesson',
             title: 'Cambio de estado en lección',
             content: `${fromUser.name} ${fromUser.surname} cambió el estado de "${lessonTitle}" de ${oldState} a ${newState}.${reasonText}`,
-            link: `/lessons/${lessonId}`,
+            link: `/inicio/leccion/${lessonId}`,
             relatedId: lessonId,
             relatedModel: 'Lesson',
             from: fromUser._id,
@@ -181,7 +181,7 @@ class NotificationService {
             type: 'lesson',
             title: 'Nueva convocatoria disponible',
             content: `${fromUser.name} ${fromUser.surname} ha creado una convocatoria para "${lessonTitle}": "${callText.substring(0, 100)}${callText.length > 100 ? '...' : ''}"`,
-            link: `/lessons/${lessonId}`,
+            link: `/inicio/convocatoria/${lessonId}`,
             relatedId: lessonId,
             relatedModel: 'Lesson',
             from: fromUser._id,
@@ -194,6 +194,24 @@ class NotificationService {
         }));
 
         return await Notification.insertMany(notifications);
+    }
+
+    // X. Notificación para re-sugerir lección tras rechazo
+    static async createLessonResuggestNotification(reviewerUser, authorId, lessonId, lessonTitle) {
+        // Abrir listado con query params para disparar modal y referenciar la lección
+        const link = `/inicio/lecciones?openSuggestModal=true&lessonId=${lessonId}`;
+        return await Notification.createNotification({
+            user: authorId,
+            type: 'lesson',
+            title: 'Tu lección fue rechazada, sugiérela nuevamente',
+            content: `${reviewerUser.name} ${reviewerUser.surname} rechazó "${lessonTitle}". Puedes revisarla y sugerir nuevamente con un clic.
+`,
+            link,
+            relatedId: lessonId,
+            relatedModel: 'Lesson',
+            from: reviewerUser._id || reviewerUser.sub,
+            priority: 'high'
+        });
     }
 
     // 6. Notificación de recurso enviado para aprobación (al usuario)
@@ -350,7 +368,7 @@ class NotificationService {
             type: 'lesson',
             title: 'Te han sugerido como facilitador',
             content: `${suggestionAuthor.name} ${suggestionAuthor.surname} te ha sugerido como facilitador para la lección "${lessonTitle}". Revisa tus invitaciones para aprobar o rechazar.`,
-            link: `/inicio/asesorar-lecciones`,
+            link: `/inicio/asesorar-lecciones?openPreview=true&lessonId=${lessonId}`,
             relatedId: lessonId,
             relatedModel: 'Lesson',
             from: suggestionAuthor._id,
@@ -368,7 +386,7 @@ class NotificationService {
             type: 'lesson',
             title: '¡Tu sugerencia de lección fue aprobada!',
             content: `Tu sugerencia de lección "${lessonTitle}" ha sido aprobada y se está preparando para desarrollo`,
-            link: `/lessons/${lessonId}`,
+            link: `/inicio/mis-lecciones/${lessonId}`,
             relatedId: lessonId,
             relatedModel: 'Lesson',
             from: approvedBy,
@@ -384,7 +402,7 @@ class NotificationService {
             type: 'lesson',
             title: 'Tu sugerencia de lección necesita revisión',
             content: `Tu sugerencia de lección "${lessonTitle}" necesita ser revisada.${reasonText}`,
-            link: `/lessons/${lessonId}`,
+            link: `/inicio/mis-lecciones/${lessonId}`,
             relatedId: lessonId,
             relatedModel: 'Lesson',
             from: rejectedBy,
@@ -417,7 +435,7 @@ class NotificationService {
             type: 'lesson',
             title: 'El facilitador aceptó tu sugerencia',
             content: `${facilitator.name} ${facilitator.surname} ha aceptado ser facilitador de tu lección sugerida "${lessonTitle}"`,
-            link: `/lessons/${lessonId}`,
+            link: `/inicio/convocatorias/${lessonId}`,
             relatedId: lessonId,
             relatedModel: 'Lesson',
             from: facilitator._id,
@@ -455,7 +473,7 @@ class NotificationService {
             type: 'lesson',
             title: 'El facilitador rechazó la invitación',
             content: `${facilitator.name} ${facilitator.surname} ha rechazado ser facilitador de tu lección sugerida "${lessonTitle}".${reasonText}`,
-            link: `/lessons/${lessonId}`,
+            link: `/inicio/mis-lecciones/${lessonId}`,
             relatedId: lessonId,
             relatedModel: 'Lesson',
             from: facilitator._id,
@@ -491,7 +509,7 @@ class NotificationService {
             type: 'lesson',
             title: '¡Tu lección fue aprobada automáticamente!',
             content: `Tu lección "${lessonTitle}" ha sido aprobada automáticamente porque ${facilitator.name} ${facilitator.surname} aceptó ser el facilitador`,
-            link: `/lessons/${lessonId}`,
+            link: `/inicio/convocatorias/${lessonId}`,
             relatedId: lessonId,
             relatedModel: 'Lesson',
             from: facilitator._id,
@@ -585,7 +603,7 @@ class NotificationService {
             type: 'lesson',
             title: '¡Tu experiencia fue aprobada!',
             content: `Tu experiencia "${experienceTitle}" ha sido aprobada y ahora está visible en la red`,
-            link: `/lessons/${experienceId}`,
+            link: `/inicio/mis-lecciones/${experienceId}`,
             relatedId: experienceId,
             relatedModel: 'Lesson',
             from: approvedBy,
@@ -601,7 +619,7 @@ class NotificationService {
             type: 'lesson',
             title: 'Tu experiencia necesita revisión',
             content: `Tu experiencia "${experienceTitle}" necesita ser revisada.${reasonText}`,
-            link: `/lessons/${experienceId}`,
+            link: `/inicio/mis-lecciones/${experienceId}`,
             relatedId: experienceId,
             relatedModel: 'Lesson',
             from: rejectedBy,
@@ -609,14 +627,13 @@ class NotificationService {
         });
     }
     // ===== FUNCIONES ORIGINALES =====
-
     // Crear notificación de nueva lección
     static async createLessonNotification(fromUser, toUsers, lessonId, lessonTitle) {
         const notificationData = {
             type: 'lesson',
             title: 'Nueva lección disponible',
             content: `${fromUser.name} ${fromUser.surname} ha creado una nueva lección: "${lessonTitle}"`,
-            link: `/lessons/${lessonId}`,
+            link: `/inicio/convocatorias/${lessonId}`,
             relatedId: lessonId,
             relatedModel: 'Lesson',
             from: fromUser._id,
@@ -659,7 +676,7 @@ class NotificationService {
             type: 'comment',
             title: 'Nuevo comentario en tu recurso',
             content: `${fromUser.name} ${fromUser.surname} comentó en "${resourceTitle}"`,
-            link: `/resources/${commentId}`,
+            link: `/inicio/recursos/${commentId}`,
             relatedId: commentId,
             relatedModel: 'Comment',
             from: fromUser._id,
@@ -709,7 +726,7 @@ class NotificationService {
             type: 'resource',
             title: 'Nuevo recurso disponible',
             content: `${fromUser.name} ${fromUser.surname} ha compartido un nuevo recurso: "${resourceTitle}"`,
-            link: `/resources/${resourceId}`,
+            link: `/inicio/recursos/${resourceId}`,
             relatedId: resourceId,
             relatedModel: 'Resource',
             from: fromUser._id,
@@ -928,6 +945,32 @@ class NotificationService {
             console.error('Error al crear notificaciones de lección completada:', error);
             return [];
         }
+    }
+
+     // 28. Notificación de nuevo mensaje en lección
+     static async createLessonMessageAcademicNotification(fromUser, lessonParticipants, lessonId, lessonTitle, messageText) {
+        const notificationData = {
+            type: 'lesson',
+            title: 'Nuevo mensaje en lección',
+            content: `${fromUser.name} ${fromUser.surname} escribió en "${lessonTitle}": "${messageText.substring(0, 50)}${messageText.length > 50 ? '...' : ''}"`,
+            link: `/academia/lessons/${lessonId}`,
+            relatedId: lessonId,
+            relatedModel: 'Lesson',
+            from: fromUser._id,
+            priority: 'medium'
+        };
+
+        // Notificar a todos los participantes excepto al autor del mensaje
+        const participantsToNotify = lessonParticipants.filter(userId => 
+            userId.toString() !== fromUser._id.toString()
+        );
+
+        const notifications = participantsToNotify.map(userId => ({
+            user: userId,
+            ...notificationData
+        }));
+
+        return await Notification.insertMany(notifications);
     }
 }
 

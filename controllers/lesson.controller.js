@@ -5,6 +5,7 @@ const Comment = require('../models/comment.model');
 const User = require('../models/user.model');
 const KnowledgeArea = require('../models/knowledge-area.model');
 const Notification = require('../models/notification.model');
+const Follow = require('../models/follow.model');
 const moment = require('moment');
 const LESSON_PATH = './uploads/lessons/';
 
@@ -311,6 +312,36 @@ const updateLesson = async (req, res) => {
             throw updateError;
         }
 
+        // Si se re-propone (proposed y accepted=false), disparar notificaciones
+        try {
+            const becameProposed = updateData.state === 'proposed' && currentLesson.state !== 'proposed';
+            const acceptedFalse = updateData.accepted === false || (currentLesson.accepted !== true && (updateData.accepted === undefined));
+            if (becameProposed && acceptedFalse) {
+                // Buscar facilitador sugerido en el documento actualizado o payload
+                const suggestedFacilitatorId = (lessonUpdated?.suggested_facilitator && lessonUpdated.suggested_facilitator._id)
+                    ? lessonUpdated.suggested_facilitator._id
+                    : (lessonUpdated?.suggested_facilitator || updateData.suggested_facilitator);
+                const suggestionAuthor = await User.findById(req.user.sub).select('name surname _id');
+
+                if (suggestedFacilitatorId) {
+                    await NotificationService.createFacilitatorSuggestionNotification(
+                        suggestionAuthor,
+                        suggestedFacilitatorId,
+                        lessonUpdated._id,
+                        lessonUpdated.title
+                    ).catch(err => console.error('Error notifying suggested facilitator:', err));
+                }
+
+                await NotificationService.createLessonSuggestionSubmittedNotification(
+                    suggestionAuthor._id,
+                    lessonUpdated._id,
+                    lessonUpdated.title
+                ).catch(err => console.error('Error notifying suggestion submitted to author:', err));
+            }
+        } catch (notifyErr) {
+            console.error('Error sending re-propose notifications:', notifyErr);
+        }
+
         // Populate después de la actualización para evitar errores
         try {
             console.log("Attempting to populate lesson data...");
@@ -569,9 +600,13 @@ const getLessons = async (req, res) => {
         // Ahora la query real
         console.log('Starting main query with query:', query);
         const lessons = await Lesson.find(query)
+            .sort({ created_at: -1 })
             .skip(skip)
             .limit(limit)
             .populate('author', 'name surname picture role _id')
+            .populate('development_group', 'name surname picture role _id')
+            .populate('leader', 'name surname picture role _id')
+            .populate('expert', 'name surname picture role _id')
             .populate({ path: 'knowledge_area', model: 'KnowledgeArea', select: 'name' });
 
         console.log('Lessons found with basic populate:', lessons.length);
@@ -620,7 +655,11 @@ const getAllLessons = async (req, res) => {
     
     const { visibleOnes, order } = req.params;
     const accepted = visibleOnes === 'true';
-    const sortOrder = order ? { [order]: -1 } : { created_at: -1 };
+    // Asegurar orden consistente: por defecto created_at descendente (más reciente primero)
+    const allowedOrders = new Set(['created_at', 'views', 'score']);
+    const normalizedOrder = (order || '').trim();
+    const isValidOrder = allowedOrders.has(normalizedOrder);
+    const sortOrder = isValidOrder ? { [normalizedOrder]: -1, created_at: -1 } : { created_at: -1 };
     
     console.log("getAllLessons - visibleOnes:", visibleOnes, "accepted:", accepted, "order:", order);
     
@@ -981,8 +1020,8 @@ const getCalls = async (req, res) => {
 
         // Filtro base por estados (excluir las activas/en desarrollo)
         const stateFilter = { state: { $nin: ['assigned', 'development', 'test', 'completed'] } };
-        console.log('stateFilter:', stateFilter);
-        console.log('userId:', userId);
+       // console.log('stateFilter:', stateFilter);
+        //console.log('userId:', userId);
         // Visibilidad: todos los visibles para cualquiera; y además incluir no visibles si el solicitante es el líder
         const visibilityFilter = userId
             ? { $or: [
@@ -990,7 +1029,6 @@ const getCalls = async (req, res) => {
                     { $and: [ { "call.visible": false }, { leader: userId } ] }
                 ] }
             : { "call.visible": true };
-        console.log('visibilityFilter:', visibilityFilter);
         const query = { $and: [ stateFilter, visibilityFilter ] };
 
         const lessons = await Lesson.paginate(
@@ -1236,6 +1274,7 @@ const addLessonMessage = async (req, res) => {
 
         // Crear notificaciones
         if (participantIds.length > 0) {
+          
             await NotificationService.createLessonMessageNotification(
                 req.user,
                 participantIds,
@@ -1423,7 +1462,7 @@ const changeLessonState = async (req, res) => {
     }
 };
 
-// Crear o actualizar convocatoria (solo líder/autor y en estado approved_by_expert)
+// Crear o actualizar convocatoria (solo líder/autor)
 const createCall = async (req, res) => {
     const { id: lessonId } = req.params;
     const { text, visible = true } = req.body;
@@ -1445,8 +1484,8 @@ const createCall = async (req, res) => {
             return handleError(res, 'Only the project leader can open or edit the call', 403);
         }
 
-        // Estado permitido: cuando el facilitador avaló (accepted=true) o cuando ya esté approved_by_expert
-        if (!(lesson.accepted === true || lesson.state === 'approved_by_expert')) {
+        // Estado permitido: cuando el facilitador avaló (accepted=true) o 
+        if (!(lesson.accepted === true )) {
             return handleError(res, 'Call can only be opened after facilitator acceptance', 400);
         }
 
@@ -1461,15 +1500,26 @@ const createCall = async (req, res) => {
 
         const updatedLesson = await lesson.save();
 
-        // Si la convocatoria es visible, notificar a usuarios interesados
-        if (visible && lesson.call?.interested?.length > 0) {
-            await NotificationService.createCallNotification(
-                req.user,
-                lesson.call.interested,
-                lesson._id,
-                lesson.title,
-                text
-            ).catch(err => console.error('Error creating call notification:', err));
+        // Si la convocatoria es visible, notificar a seguidores del autor de la convocatoria
+        if (visible) {
+            try {
+                const callerId = currentUserId;
+                // Buscar seguidores: registros donde followed = callerId -> user = seguidor
+                const followers = await Follow.find({ followed: callerId }).select('user');
+                const followerIds = followers.map(f => f.user).filter(Boolean);
+
+                if (followerIds.length > 0) {
+                    await NotificationService.createCallNotification(
+                        req.user,
+                        followerIds,
+                        lesson._id,
+                        lesson.title,
+                        text
+                    );
+                }
+            } catch (notifyErr) {
+                console.error('Error notifying followers about call:', notifyErr);
+            }
         }
 
         return res.status(200).send({ lesson: updatedLesson });
@@ -2177,17 +2227,16 @@ const rejectFacilitatorSuggestion = async (req, res) => {
                 console.error('Error creating admin notification:', notificationError);
             }
 
-            // Notificar al autor también
+            // Notificar al autor para re-sugerir (link abre modal en el front)
             try {
-                await NotificationService.createNotification({
-                    user: lesson.author._id,
-                    type: 'lesson',
-                    title: 'El facilitador se retiró de tu lección',
-                    content: `${facilitator.name} ${facilitator.surname} se retiró de tu lección "${lesson.title}". Un administrador asignará un nuevo facilitador pronto.`,
-                    lesson: lessonId
-                });
+                await NotificationService.createLessonResuggestNotification(
+                    facilitator,
+                    lesson.author._id,
+                    lesson._id,
+                    lesson.title
+                );
             } catch (notificationError) {
-                console.error('Error creating author notification:', notificationError);
+                console.error('Error creating resuggest notification to author:', notificationError);
             }
 
             console.log('Facilitator withdrawn from accepted lesson:', lessonId);
@@ -2209,17 +2258,16 @@ const rejectFacilitatorSuggestion = async (req, res) => {
 
         await lesson.save();
 
-        // Notificar al autor que el facilitador rechazó
+        // Notificar al autor para re-sugerir (link abre modal en el front)
         try {
-            await NotificationService.createNotification({
-                user: lesson.author._id,
-                type: 'lesson',
-                title: 'Tu experiencia necesita un nuevo facilitador',
-                content: `El facilitador ha rechazado tu experiencia "${lesson.title}". Motivo: ${lesson.rejection_reason}. Por favor, selecciona un nuevo facilitador.`,
-                lesson: lessonId
-            });
+            await NotificationService.createLessonResuggestNotification(
+                facilitator,
+                lesson.author._id,
+                lesson._id,
+                lesson.title
+            );
         } catch (notificationError) {
-            console.error('Error creating facilitator rejection notification:', notificationError);
+            console.error('Error creating resuggest notification (reject):', notificationError);
         }
 
         console.log('Facilitator rejected lesson successfully:', lessonId);

@@ -26,6 +26,7 @@ router.post('/:id/grade', academicLessonController.gradeLesson);
 router.put('/:id/state', academicLessonController.updateLessonState);
 router.post('/:id/teacher-comments', academicLessonController.addTeacherComment);
 router.delete('/:id/teacher-comments/:commentId', academicLessonController.deleteTeacherComment);
+router.put('/:id/teacher-comments/:commentId', academicLessonController.updateTeacherComment);
 // Gestión de equipo de desarrollo
 router.post('/:id/invite', academicLessonController.addToDevelopmentGroup);
 router.post('/:id/leave', academicLessonController.leaveDevelopmentGroup);

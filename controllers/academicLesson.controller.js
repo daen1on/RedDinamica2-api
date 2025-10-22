@@ -6,6 +6,7 @@ const User = require('../models/user.model');
 const Lesson = require('../models/lesson.model');
 const NotificationService = require('../services/notification.service');
 const path = require('path');
+const moment = require('moment');
 
 // Crear una nueva lección académica
 exports.createLesson = async (req, res) => {
@@ -1413,7 +1414,7 @@ exports.addTeacherComment = async (req, res) => {
             // Crear notificaciones usando el servicio de notificaciones
             if (participantIds.length > 0) {
                 const NotificationService = require('../services/notification.service');
-                await NotificationService.createLessonMessageNotification(
+                await NotificationService.createLessonMessageAcademicNotification(
                     lesson.teacher,
                     participantIds,
                     lesson._id,
@@ -1472,6 +1473,46 @@ exports.deleteTeacherComment = async (req, res) => {
         return res.status(200).json({ status: 'success', message: 'Comentario eliminado', data: lesson.comments });
     } catch (error) {
         console.error('Error al eliminar comentario del profesor:', error);
+        return res.status(500).json({ status: 'error', message: 'Error interno del servidor', error: error.message });
+    }
+};
+
+// Actualizar comentario del profesor (autor o admin)
+exports.updateTeacherComment = async (req, res) => {
+    try {
+        const { id, commentId } = req.params;
+        const { content } = req.body;
+        const userId = req.user.sub || req.user.id;
+
+        if (!content || !String(content).trim()) {
+            return res.status(400).json({ status: 'error', message: 'Contenido requerido' });
+        }
+
+        const lesson = await AcademicLesson.findById(id).populate('comments.author', '_id role');
+        if (!lesson) {
+            return res.status(404).json({ status: 'error', message: 'Lección no encontrada' });
+        }
+
+        const comment = lesson.comments.id(commentId);
+        if (!comment) {
+            return res.status(404).json({ status: 'error', message: 'Comentario no encontrado' });
+        }
+
+        const isAuthor = comment.author && comment.author._id ? String(comment.author._id) === String(userId) : String(comment.author) === String(userId);
+        const isAdmin = req.user && (req.user.role === 'admin' || req.user.role === 'lesson_manager');
+        if (!isAuthor && !isAdmin) {
+            return res.status(403).json({ status: 'error', message: 'No tienes permisos para editar este comentario' });
+        }
+
+        comment.content = String(content);
+        comment.edited = true;
+        comment.editedAt = new Date();
+        await lesson.save();
+        await lesson.populate('comments.author', '_id name surname email');
+
+        return res.status(200).json({ status: 'success', message: 'Comentario actualizado', data: lesson.comments });
+    } catch (error) {
+        console.error('Error al actualizar comentario del profesor:', error);
         return res.status(500).json({ status: 'error', message: 'Error interno del servidor', error: error.message });
     }
 };
@@ -1591,9 +1632,9 @@ exports.moveToRedDinamica = async (req, res) => {
             al.level.forEach(lvl => {
                 const normalized = String(lvl).toLowerCase().trim();
                 if (normalized === 'colegio') {
-                    mappedLevels.push('Secundaria', 'Bachillerato');
+                    mappedLevels.push('highschool', 'middleschool');
                 } else if (normalized === 'universidad') {
-                    mappedLevels.push('Universitario');
+                    mappedLevels.push('university');
                 } else {
                     // Si viene otro valor, mantenerlo
                     mappedLevels.push(lvl);
@@ -1622,7 +1663,8 @@ exports.moveToRedDinamica = async (req, res) => {
             development_group: userIds,
             leader: al.leader?._id || al.leader, // El leader académico se mantiene como leader
             expert: al.teacher?._id || al.teacher, // El teacher académico se convierte en expert
-            created_at: new Date().toISOString(),
+            // Usar la fecha real de creación del origen, almacenada como Unix para compatibilidad con el front
+            created_at: al.createdAt ? moment(al.createdAt).unix() : moment().unix(),
             visible: true,
             accepted: true,
             knowledge_area: knowledgeAreaIds,
