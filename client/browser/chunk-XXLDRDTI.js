@@ -1,0 +1,1 @@
+import{a as r}from"./chunk-O2KZDLK6.js";import{_ as e,bc as o}from"./chunk-3BHHYQXT.js";var p=(u,c)=>{let n=e(o),t=e(r),i=t.getIdentity(),s=t.getToken();return i&&s?!0:(console.log("Usuario no autenticado, redirigiendo a home"),n.parseUrl("/"))};export{p as a};

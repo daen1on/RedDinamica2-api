@@ -4,24 +4,8 @@ const Notification = require('../models/notification.model');
 
 class NotificationService {
     
-    // Crear notificación de nuevo mensaje
-    static async createMessageNotification(fromUser, toUser, messageId) {
-        return await Notification.createNotification({
-            user: toUser,
-            type: 'message',
-            title: 'Nuevo mensaje',
-            content: `${fromUser.name} ${fromUser.surname} te ha enviado un mensaje`,
-            link: `/mensajes/${messageId}`,
-            relatedId: messageId,
-            relatedModel: 'Message',
-            from: fromUser._id,
-            priority: 'medium'
-        });
-    }
-
-    // ===== NUEVAS FUNCIONES ESPECÍFICAS =====
-
-    // 1. Notificación de comentario en publicación
+   
+    // Notificación de comentario en publicación
     static async createPublicationCommentNotification(fromUser, publicationOwner, publicationId, commentText) {
         return await Notification.createNotification({
             user: publicationOwner,
@@ -36,7 +20,7 @@ class NotificationService {
         });
     }
 
-    // 0. Notificación de agregado/invitación a grupo académico
+    // 1 Notificación de agregado/invitación a grupo académico
     static async createGroupInvitationNotification(fromUser, toUserId, groupId, groupName) {
         return await Notification.createNotification({
             user: toUserId,

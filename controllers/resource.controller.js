@@ -94,7 +94,7 @@ const deleteResource = async (req, res) => {
     const resourceId = req.params.id;
     try {
         // Admins/delegated_admins can delete any resource; others can delete only their own
-        const isAdmin = req.user && (req.user.role === 'admin' || req.user.role === 'delegated_admin');
+        const isAdmin = req.user && (req.user.role === 'admin' || req.user.role === 'delegated_admin'|| req.user.role === 'lesson_manager');
         const baseFilter = { _id: resourceId };
         const filter = isAdmin ? baseFilter : { ...baseFilter, author: req.user.sub };
 

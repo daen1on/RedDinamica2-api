@@ -8,12 +8,13 @@ const bcrypt = require('bcryptjs');
 const { v4: uuidv4 } = require('uuid');
 const mail = require('../services/mail.service');
 const NotificationService = require('../services/notification.service');
+const mongoose = require('mongoose');
 
 // Listar todos los grupos (solo admin o lesson_manager). Soporta filtro active=true
 exports.getAllGroups = async (req, res) => {
     try {
         const role = req.user.role;
-        if (role !== 'admin' && role !== 'lesson_manager') {
+        if (role !== 'admin' && role !== 'lesson_manager' && role !=='delegated_admin') {
             return res.status(403).json({ status: 'error', message: 'No tienes permisos para listar todos los grupos' });
         }
 
@@ -44,15 +45,7 @@ exports.createGroup = async (req, res) => {
 
         // Admin, teacher and facilitator can create groups 
 
-        // Validar el nivel académico y grado
-        const validGrades = AcademicGroup.getValidGrades(academicLevel);
-        if (!validGrades.includes(grade)) {
-            return res.status(400).json({
-                status: 'error',
-                message: `Grado inválido para el nivel ${academicLevel}. Grados válidos: ${validGrades.join(', ')}`
-            });
-        }
-
+     
         const group = new AcademicGroup({
             name,
             description,
@@ -186,9 +179,9 @@ exports.getGroupById = async (req, res) => {
 exports.updateGroup = async (req, res) => {
     try {
         const { id } = req.params;
-        const { name, description, academicLevel, grade, maxStudents, subjects } = req.body;
+        const { name, description, academicLevel, grade, maxStudents, subjects, teacher } = req.body;
         const teacherId = req.user.sub || req.user.id;
-
+        console.log(teacher);
         const group = await AcademicGroup.findById(id);
         if (!group) {
             return res.status(404).json({
@@ -198,37 +191,52 @@ exports.updateGroup = async (req, res) => {
         }
 
         // Verificar que el usuario sea el docente del grupo
-        if (group.teacher.toString() !== teacherId && (req.user.role !== 'admin' && req.user.role !== 'lesson_manager')) {
+        if (group.teacher.toString() !== teacherId && (req.user.role !== 'admin' && req.user.role !== 'lesson_manager' && req.user.role !== 'delegated_admin')) {
             return res.status(403).json({
                 status: 'error',
                 message: 'No tienes permisos para modificar este grupo'
             });
         }
 
-        // Validar el nivel académico y grado si se proporcionan
-        if (academicLevel && grade) {
-            const validGrades = AcademicGroup.getValidGrades(academicLevel);
-            if (!validGrades.includes(grade)) {
-                return res.status(400).json({
-                    status: 'error',
-                    message: `Grado inválido para el nivel ${academicLevel}. Grados válidos: ${validGrades.join(', ')}`
-                });
+      
+
+        // Construir actualización parcial
+        const update = {
+            ...(typeof name !== 'undefined' && { name }),
+            ...(typeof description !== 'undefined' && { description }),
+            ...(typeof academicLevel !== 'undefined' && { academicLevel }),
+            ...(typeof grade !== 'undefined' && { grade }),
+            ...(typeof maxStudents !== 'undefined' && { maxStudents }),
+            ...(Array.isArray(subjects) && { subjects })
+        };
+
+        // Cambio de dueño (solo admin/lesson_manager)
+        if (typeof teacher !== 'undefined' && (req.user.role === 'admin' || req.user.role === 'lesson_manager')) {
+            // Aceptar teacher como string o como objeto {_id}
+            let newOwnerId = null;
+            if (teacher && typeof teacher === 'object') {
+                newOwnerId = teacher._id || teacher.id || null;
+            } else if (typeof teacher === 'string') {
+                newOwnerId = teacher;
+            }
+            if (!newOwnerId || !mongoose.Types.ObjectId.isValid(newOwnerId)) {
+                return res.status(400).json({ status: 'error', message: 'ID de nuevo dueño inválido' });
+            }
+            if (newOwnerId.toString() !== group.teacher.toString()) {
+                const newOwner = await User.findById(newOwnerId.toString());
+                if (!newOwner) {
+                    return res.status(404).json({ status: 'error', message: 'Nuevo dueño no encontrado' });
+                }
+                // actualizar teachingGroups de usuarios
+                await User.findByIdAndUpdate(group.teacher, { $pull: { teachingGroups: group._id } });
+                await User.findByIdAndUpdate(newOwnerId.toString(), { $addToSet: { teachingGroups: group._id } });
+                update.teacher = newOwnerId.toString();
             }
         }
 
-        const updatedGroup = await AcademicGroup.findByIdAndUpdate(
-            id,
-            {
-                name,
-                description,
-                academicLevel,
-                grade,
-                maxStudents,
-                subjects
-            },
-            { new: true }
-        ).populate('teacher', 'name surname email avatar')
-         .populate('students', 'name surname email avatar');
+        const updatedGroup = await AcademicGroup.findByIdAndUpdate(id, update, { new: true })
+            .populate('teacher', 'name surname email avatar')
+            .populate('students', 'name surname email avatar');
 
         res.status(200).json({
             status: 'success',
@@ -260,7 +268,7 @@ exports.deleteGroup = async (req, res) => {
         }
 
         // Verificar que el usuario sea el docente del grupo
-        if (group.teacher.toString() !== teacherId && (req.user.role !== 'admin' && req.user.role !== 'lesson_manager')) {
+        if (group.teacher.toString() !== teacherId && (req.user.role !== 'admin' && req.user.role !== 'lesson_manager' && req.user.role !== 'delegated_admin')) {
             return res.status(403).json({
                 status: 'error',
                 message: 'No tienes permisos para eliminar este grupo'
@@ -308,7 +316,7 @@ exports.addStudentToGroup = async (req, res) => {
         }
 
         // Verificar que el usuario sea el docente del grupo
-        if (group.teacher.toString() !== teacherId && (req.user.role !== 'admin' && req.user.role !== 'lesson_manager')) {
+        if (group.teacher.toString() !== teacherId && (req.user.role !== 'admin' && req.user.role !== 'lesson_manager' && req.user.role !== 'delegated_admin')) {
             return res.status(403).json({
                 status: 'error',
                 message: 'No tienes permisos para modificar este grupo'
@@ -395,7 +403,7 @@ exports.inviteStudentByEmail = async (req, res) => {
         }
 
         // Solo docente del grupo o admin pueden invitar
-        if (group.teacher.toString() !== teacherId && (req.user.role !== 'admin' && req.user.role !== 'lesson_manager')) {
+        if (group.teacher.toString() !== teacherId && (req.user.role !== 'admin' && req.user.role !== 'lesson_manager' && req.user.role !== 'delegated_admin')) {
             return res.status(403).json({ status: 'error', message: 'No tienes permisos para modificar este grupo' });
         }
 
@@ -497,7 +505,7 @@ exports.removeStudentFromGroup = async (req, res) => {
         // 2. Admin o lesson_manager pueden remover a cualquiera
         // 3. Un estudiante puede removerse a sí mismo (abandonar el grupo)
         const isTeacher = group.teacher.toString() === userId;
-        const isAdmin = req.user.role === 'admin' || req.user.role === 'lesson_manager';
+        const isAdmin = req.user.role === 'admin' || req.user.role === 'lesson_manager' || req.user.role === 'delegated_admin';
         const isSelfRemoval = userId === studentId;
 
         if (!isTeacher && !isAdmin && !isSelfRemoval) {
@@ -562,7 +570,7 @@ exports.getGroupStudents = async (req, res) => {
         const userId = req.user.sub || req.user.id;
         if (group.teacher.toString() !== teacherId && 
             !group.students.includes(userId) && 
-            req.user.role !== 'admin' && req.user.role !== 'lesson_manager') {
+            req.user.role !== 'admin' && req.user.role !== 'lesson_manager' && req.user.role !== 'delegated_admin') {
             return res.status(403).json({
                 status: 'error',
                 message: 'No tienes permisos para ver este grupo'
@@ -601,7 +609,7 @@ exports.getGroupStatistics = async (req, res) => {
         }
 
         // Verificar que el usuario sea el docente del grupo
-        if (group.teacher.toString() !== teacherId && (req.user.role !== 'admin' && req.user.role !== 'lesson_manager')) {
+        if (group.teacher.toString() !== teacherId && (req.user.role !== 'admin' && req.user.role !== 'lesson_manager' && req.user.role !== 'delegated_admin')) {
             return res.status(403).json({
                 status: 'error',
                 message: 'No tienes permisos para ver las estadísticas de este grupo'
@@ -677,7 +685,7 @@ exports.updateGroupPermissions = async (req, res) => {
         }
 
         // Solo el docente del grupo puede actualizar permisos
-        if (group.teacher.toString() !== userId && (req.user.role !== 'admin' && req.user.role !== 'lesson_manager')) {
+        if (group.teacher.toString() !== userId && (req.user.role !== 'admin' && req.user.role !== 'lesson_manager' && req.user.role !== 'delegated_admin')) {
             return res.status(403).json({
                 status: 'error',
                 message: 'No tienes permisos para actualizar los permisos de este grupo'
@@ -776,7 +784,7 @@ exports.getDiscussionThreads = async (req, res) => {
         }
 
         // Solo miembros del grupo, docente o admin pueden ver
-        const isMember = group.teacher.toString() === userId || group.students.some(s => s.toString() === userId) || req.user.role === 'admin' || req.user.role === 'lesson_manager';
+        const isMember = group.teacher.toString() === userId || group.students.some(s => s.toString() === userId) || req.user.role === 'admin' || req.user.role === 'lesson_manager' || req.user.role === 'delegated_admin';
         if (!isMember) {
             return res.status(403).json({ status: 'error', message: 'No tienes permisos para ver esta discusión' });
         }
@@ -881,7 +889,7 @@ exports.getDiscussionThread = async (req, res) => {
         }
 
         // Solo miembros del grupo, docente o admin pueden ver
-        const isMember = group.teacher.toString() === userId || group.students.some(s => s.toString() === userId) || req.user.role === 'admin' || req.user.role === 'lesson_manager';
+        const isMember = group.teacher.toString() === userId || group.students.some(s => s.toString() === userId) || req.user.role === 'admin' || req.user.role === 'lesson_manager' || req.user.role === 'delegated_admin';
         if (!isMember) {
             return res.status(403).json({ status: 'error', message: 'No tienes permisos para ver este thread' });
         }
@@ -920,7 +928,7 @@ exports.addMessageToThread = async (req, res) => {
         // Solo miembros del grupo, docente o admin pueden publicar
         const isTeacherOfGroup = group.teacher.toString() === userId;
         const isStudentOfGroup = group.students.some(s => s.toString() === userId);
-        const isAdmin = req.user.role === 'admin' || req.user.role === 'delegated_admin';
+        const isAdmin = req.user.role === 'admin' || req.user.role === 'lesson_manager' || req.user.role === 'delegated_admin';
         const isMember = isTeacherOfGroup || isStudentOfGroup || isAdmin;
         
         console.log('[addMessageToThread] Verificación de permisos:', {
@@ -998,7 +1006,7 @@ exports.deleteMessageFromThread = async (req, res) => {
         }
 
         const isTeacher = group.teacher.toString() === userId;
-        const isAdmin = req.user.role === 'admin' || req.user.role === 'lesson_manager';
+        const isAdmin = req.user.role === 'admin' || req.user.role === 'lesson_manager' || req.user.role === 'delegated_admin';
         const authorId = (message.author && message.author._id)
             ? message.author._id.toString()
             : String(message.author);
@@ -1041,7 +1049,7 @@ exports.deleteDiscussionThread = async (req, res) => {
         }
 
         const isTeacher = group.teacher.toString() === userId;
-        const isAdmin = req.user.role === 'admin' || req.user.role === 'lesson_manager';
+        const isAdmin = req.user.role === 'admin' || req.user.role === 'lesson_manager' || req.user.role === 'delegated_admin';
         if (!isTeacher && !isAdmin) {
             return res.status(403).json({ status: 'error', message: 'No tienes permisos para eliminar este thread' });
         }
@@ -1078,7 +1086,7 @@ exports.togglePinThread = async (req, res) => {
         }
 
         const isTeacher = group.teacher.toString() === userId;
-        const isAdmin = req.user.role === 'admin' || req.user.role === 'lesson_manager';
+        const isAdmin = req.user.role === 'admin' || req.user.role === 'lesson_manager' || req.user.role === 'delegated_admin';
         if (!isTeacher && !isAdmin) {
             return res.status(403).json({ status: 'error', message: 'No tienes permisos para fijar threads' });
         }
@@ -1114,7 +1122,7 @@ exports.toggleLockThread = async (req, res) => {
         }
 
         const isTeacher = group.teacher.toString() === userId;
-        const isAdmin = req.user.role === 'admin' || req.user.role === 'lesson_manager';
+        const isAdmin = req.user.role === 'admin' || req.user.role === 'lesson_manager' || req.user.role === 'delegated_admin';
         if (!isTeacher && !isAdmin) {
             return res.status(403).json({ status: 'error', message: 'No tienes permisos para bloquear threads' });
         }
@@ -1213,7 +1221,7 @@ exports.getGroupResources = async (req, res) => {
         }
 
         // Solo miembros del grupo, docente o admin pueden ver
-        const isMember = group.teacher.toString() === userId || group.students.some(s => s.toString() === userId) || req.user.role === 'admin';
+        const isMember = group.teacher.toString() === userId || group.students.some(s => s.toString() === userId) || req.user.role === 'admin' || req.user.role === 'lesson_manager' || req.user.role === 'delegated_admin' ;
         if (!isMember) {
             return res.status(403).json({ status: 'error', message: 'No tienes permisos para ver estos recursos' });
         }
@@ -1237,7 +1245,7 @@ exports.addGroupResource = async (req, res) => {
             return res.status(404).json({ status: 'error', message: 'Grupo académico no encontrado' });
         }
 
-        if (group.teacher.toString() !== userId && req.user.role !== 'admin') {
+        if (group.teacher.toString() !== userId && req.user.role !== 'admin' && req.user.role !== 'lesson_manager' && req.user.role !== 'delegated_admin') {
             return res.status(403).json({ status: 'error', message: 'No tienes permisos para modificar recursos del grupo' });
         }
 
@@ -1272,7 +1280,7 @@ exports.removeGroupResource = async (req, res) => {
             return res.status(404).json({ status: 'error', message: 'Grupo académico no encontrado' });
         }
 
-        if (group.teacher.toString() !== userId && req.user.role !== 'admin') {
+        if (group.teacher.toString() !== userId && req.user.role !== 'admin' && req.user.role !== 'lesson_manager' && req.user.role !== 'delegated_admin') {
             return res.status(403).json({ status: 'error', message: 'No tienes permisos para modificar recursos del grupo' });
         }
 

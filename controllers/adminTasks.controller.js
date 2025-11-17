@@ -9,22 +9,20 @@ async function getTasksSummary(req, res) {
     const Lesson = require('../models/lesson.model');
 
     const [recursosPorAprobar, leccionesPorMover] = await Promise.all([
-      Resource.countDocuments({ accepted: false, visible: false }),
+      // Alinear con listRecursosPendientes (accepted: false)
+      Resource.countDocuments({ accepted: false }),
       AcademicLesson.countDocuments({ state: 'ready_for_migration', isExported: false })
     ]);
 
+    // Alinear con listConvocatorias + reglas de filtro:
+    // - completed sin hijo (independiente de call)
+    // - proposed aceptadas y sin call o con call.visible=false
+    // - cualquier lección con call.visible=false
     const convocatoriasPorAbrir = await Lesson.countDocuments({
       $or: [
-        { 'call.visible': false },
-        {
-          state: 'completed',
-          call: { $exists: true, $ne: null },
-          son_lesson: { $exists: false }
-        },
-        {
-          state: 'proposed',
-          accepted: true
-        }
+        { state: 'completed', son_lesson: { $exists: false } },
+        { state: 'proposed', accepted: true, $or: [ { call: { $exists: false } }, { 'call.visible': false } ] },
+        { 'call.visible': false }
       ]
     });
     const sugerenciasPorHacer = await Lesson.countDocuments({ state: 'proposed', accepted: false });

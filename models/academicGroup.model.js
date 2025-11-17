@@ -31,8 +31,7 @@ const academicGroupSchema = new Schema({
         enum: ['Colegio', 'Universidad']
     },
     grade: {
-        type: String,
-        required: true
+        type: String
     },
     maxStudents: {
         type: Number,
@@ -184,21 +183,6 @@ academicGroupSchema.statics.getValidGrades = function(academicLevel) {
     
     return grades[academicLevel] || [];
 };
-
-// Método estático para validar un grado específico
-academicGroupSchema.statics.validateGrade = function(academicLevel, grade) {
-    const validGrades = this.getValidGrades(academicLevel);
-    return validGrades.includes(grade);
-};
-
-// Middleware pre-save para validar el grado
-academicGroupSchema.pre('save', function(next) {
-    if (!this.constructor.validateGrade(this.academicLevel, this.grade)) {
-        const validGrades = this.constructor.getValidGrades(this.academicLevel);
-        return next(new Error(`Grado inválido para el nivel ${this.academicLevel}. Grados válidos: ${validGrades.join(', ')}`));
-    }
-    next();
-});
 
 // Método para inicializar thread general
 academicGroupSchema.methods.initializeGeneralThread = function() {
