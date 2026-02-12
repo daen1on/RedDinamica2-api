@@ -292,6 +292,53 @@ const updateLesson = async (req, res) => {
             console.log(`Duplicados eliminados en development_group. Miembros únicos: ${uniqueMembers.length}`);
         }
 
+        // Al activar la lección (asignar/desarrollar), agregar interesados a development_group
+        const isAssigning = updateData.state === 'assigned' && currentLesson.state !== 'assigned';
+        const isStartingDevelopment = updateData.state === 'development' && currentLesson.state !== 'development';
+        // Solo fusionar interesados si quien ejecuta es el líder de la lección
+        const actorId = (req.user && (req.user._id || req.user.sub || req.user.id)) ? (req.user._id || req.user.sub || req.user.id).toString() : null;
+        const currentLeaderId = (currentLesson.leader && currentLesson.leader._id)
+            ? currentLesson.leader._id.toString()
+            : (currentLesson.leader ? currentLesson.leader.toString() : null);
+        const isExecutedByLeader = actorId && currentLeaderId && actorId === currentLeaderId;
+        if ((isAssigning || isStartingDevelopment) && isExecutedByLeader) {
+            try {
+                // Obtener interesados desde el payload (si vino) o desde la lección actual
+                const interestedFromPayload = updateData['call.interested'];
+                let interestedIds = [];
+                if (Array.isArray(interestedFromPayload)) {
+                    interestedIds = interestedFromPayload
+                        .map(u => (u && u._id) ? u._id.toString() : (u ? u.toString() : null))
+                        .filter(Boolean);
+                } else if (currentLesson.call && Array.isArray(currentLesson.call.interested)) {
+                    interestedIds = currentLesson.call.interested
+                        .map(u => (u && u._id) ? u._id.toString() : (u ? u.toString() : null))
+                        .filter(Boolean);
+                }
+
+                // Grupo de desarrollo existente (payload tiene prioridad)
+                let devGroupIds = [];
+                if (Array.isArray(updateData.development_group)) {
+                    devGroupIds = updateData.development_group
+                        .map(m => (m && m._id) ? m._id.toString() : (m ? m.toString() : null))
+                        .filter(Boolean);
+                } else if (Array.isArray(currentLesson.development_group)) {
+                    devGroupIds = currentLesson.development_group
+                        .map(m => (m && m._id) ? m._id.toString() : (m ? m.toString() : null))
+                        .filter(Boolean);
+                }
+
+                // Unir y deduplicar
+                const mergedSet = new Set([...devGroupIds, ...interestedIds].filter(Boolean));
+                updateData.development_group = Array.from(mergedSet);
+                console.log(`Interesados fusionados en development_group al activar. Interesados: ${interestedIds.length}. Nuevo tamaño grupo: ${updateData.development_group.length}`);
+            } catch (mergeErr) {
+                console.error('Error fusionando interesados en development_group:', mergeErr);
+            }
+        } else if (isAssigning || isStartingDevelopment) {
+            console.log('Activación realizada por usuario no líder; no se fusionan interesados en development_group.');
+        }
+
         console.log("Attempting to update lesson in database...");
         
         let lessonUpdated;

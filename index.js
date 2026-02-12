@@ -36,6 +36,11 @@ async function initApp(){
     // Inicializar cron job de resúmenes mensuales
     try { 
         cronController.initMonthlyDigestCron();
+        cronController.initNotificationCleanupCron();
+        // Usamos console.error para asegurar que se vea en el log de Docker 
+        // a pesar del filtro de verbosidad de producción
+        console.error("[SYSTEM] Tareas programadas inicializadas: Resumen y Limpieza.");
+
     } catch (error) {
         console.error("Error initializing monthly digest cron:", error);
     }
