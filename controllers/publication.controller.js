@@ -1,6 +1,6 @@
 'use strict'
 let { ITEMS_PER_PAGE } = require('../config');
-
+const mongoose = require('mongoose'); 
 // Load libraries
 
 let moment = require('moment');
@@ -242,7 +242,15 @@ const getPublication = async (req, res) => {
 };
 
 const deletePublication = async (req, res) => {
+    console.log(req.params);
     const publicationId = req.params.id;
+    // 1. Validación preventiva del ID
+    if (!mongoose.Types.ObjectId.isValid(publicationId)) {
+        return res.status(400).send({ 
+            message: 'El ID enviado no es válido.',
+            received: publicationId 
+        });
+    }
     try {
         const publicationRemoved = await Publication.findOneAndDelete({ _id: publicationId, user: req.user.sub });
 

@@ -19,11 +19,12 @@ app.use((req, res, next) => {
 
 const trustedSources = ["'self'"];
 if (process.env.NODE_ENV !== 'production') {
-  trustedSources.push('http://localhost:4200', 'ws://localhost:*');
+  trustedSources.push('http://localhost:4200', 'http://localhost:4200/*', 'ws://localhost:*');
 }
 
 app.use(
   helmet({
+    crossOriginResourcePolicy: process.env.NODE_ENV === 'production' ? { policy: 'same-origin' } : false,
     contentSecurityPolicy: {
       directives: {
         defaultSrc: trustedSources,
@@ -65,16 +66,19 @@ app.use(
 );
 
 const allowedOrigins = [
+  'http://localhost:3800/*',
+  'http://localhost:4200*',
   'http://localhost:3800',
-  'http://localhost:4200',
-  'http://localhost:4200/#/',
-  'https://localhost:4200',
+  'http://localhost:4200/#/*',
+  'https://localhost:4200/*',
+  'https://localhost:4200/#/*',
   'https://simon.uis.edu.co',
+  ,
 ];
 
 const corsOptions = {
   origin: (origin, callback) => {
-    if (!origin || allowedOrigins.includes(origin)) {
+    if (!origin || process.env.NODE_ENV === 'development' || allowedOrigins.includes(origin)) {
       callback(null, true);
     } else {
       console.warn(`CORS blocked origin: ${origin}`);

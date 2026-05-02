@@ -2,7 +2,11 @@ const mongoose = require('mongoose');
 const { MONGO_HOST, MONGO_PORT, MONGO_DB, MONGO_USER, MONGO_PASS } = process.env;
 const user = encodeURIComponent(MONGO_USER);
 const pass = encodeURIComponent(MONGO_PASS);
-const connectionUrl = `mongodb://${user}:${pass}@${MONGO_HOST}:${MONGO_PORT}/${MONGO_DB}?authSource=admin`;
+
+const connectionUrl = (process.env.NODE_ENV === 'production')
+    ? `mongodb://${user}:${pass}@${MONGO_HOST}:${MONGO_PORT}/${MONGO_DB}?authSource=admin`
+    : `mongodb://${MONGO_HOST}:${MONGO_PORT}/${MONGO_DB}?authSource=admin`;
+
 const initData = require('./initData');
 const options = {
     family:4

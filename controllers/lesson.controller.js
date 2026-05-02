@@ -41,13 +41,13 @@ const saveLesson = async (req, res) => {
     const { body: params } = req;
     const lesson = new Lesson(params);
     lesson.created_at = moment().unix();
-    
+
     try {
         const lessonStored = await lesson.save();
-        
+
         // Obtener información del usuario que sugiere la lección
         const suggestionAuthor = await User.findById(req.user.sub);
-        
+
         // Si es una sugerencia de lección, enviar notificaciones
         if (params.class === 'suggest' || lesson.state === 'proposed') {
             try {
@@ -171,7 +171,7 @@ const deleteLesson = async (req, res) => {
         if (!lessonRemoved) {
             return handleError(res, 'Lesson not found', 404);
         }
-        
+
         // Si la lección eliminada tiene versión > 1, limpiar son_lesson del padre
         if (lessonRemoved.version && lessonRemoved.version > 1 && lessonRemoved.father_lesson) {
             console.log(`Limpiando son_lesson del padre (${lessonRemoved.father_lesson}) porque se eliminó versión ${lessonRemoved.version}`);
@@ -180,7 +180,7 @@ const deleteLesson = async (req, res) => {
                 { $unset: { son_lesson: "" } }
             );
         }
-        
+
         await Comment.deleteMany({ _id: { $in: lessonRemoved.comments } });
         return res.status(200).send({ lesson: lessonRemoved });
     } catch (err) {
@@ -254,7 +254,7 @@ const updateLesson = async (req, res) => {
                 currentState: currentLesson.state,
                 newState: updateData.state
             });
-        }       
+        }
         // Log de campos específicos que se están actualizando
         console.log("Fields being updated:", {
             hasLevel: updateData.level !== undefined,
@@ -279,7 +279,7 @@ const updateLesson = async (req, res) => {
             // Eliminar duplicados basándose en _id
             const uniqueMembers = [];
             const seenIds = new Set();
-            
+
             for (const member of updateData.development_group) {
                 const memberId = member._id || member;
                 if (!seenIds.has(memberId.toString())) {
@@ -287,7 +287,7 @@ const updateLesson = async (req, res) => {
                     uniqueMembers.push(member);
                 }
             }
-            
+
             updateData.development_group = uniqueMembers;
             console.log(`Duplicados eliminados en development_group. Miembros únicos: ${uniqueMembers.length}`);
         }
@@ -340,12 +340,12 @@ const updateLesson = async (req, res) => {
         }
 
         console.log("Attempting to update lesson in database...");
-        
+
         let lessonUpdated;
         try {
             lessonUpdated = await Lesson.findByIdAndUpdate(lessonId, updateData, { new: true });
             console.log("Lesson updated in database successfully");
-            
+
             // Verificar qué campos se actualizaron realmente
             console.log("Updated lesson fields:", {
                 id: lessonUpdated._id,
@@ -495,10 +495,10 @@ const updateLesson = async (req, res) => {
             const stateChangedToCompleted = updateData.state === 'completed' && currentLesson.state !== 'completed';
             if (stateChangedToCompleted) {
                 console.log("Lesson state changed to completed, notifying admins and lesson managers...");
-                
+
                 // Obtener información del usuario que completó la lección
                 const lessonLeader = await User.findById(req.user.sub).select('name surname _id');
-                
+
                 if (lessonLeader) {
                     await NotificationService.createLessonCompletedNotification(
                         lessonLeader,
@@ -518,12 +518,12 @@ const updateLesson = async (req, res) => {
     } catch (err) {
         console.error("Error updating lesson:", err);
         console.error("Error stack:", err.stack);
-        
+
         // Manejo específico de errores de MongoDB
         if (err.name === 'ValidationError') {
             console.error("MongoDB Validation Error:", err.errors);
-            return res.status(400).send({ 
-                message: 'Validation error', 
+            return res.status(400).send({
+                message: 'Validation error',
                 errors: err.errors,
                 details: Object.keys(err.errors).map(key => ({
                     field: key,
@@ -531,27 +531,27 @@ const updateLesson = async (req, res) => {
                 }))
             });
         }
-        
+
         if (err.name === 'CastError') {
             console.error("MongoDB Cast Error:", err.message);
-            return res.status(400).send({ 
-                message: 'Invalid data type', 
+            return res.status(400).send({
+                message: 'Invalid data type',
                 field: err.path,
                 value: err.value,
                 expectedType: err.kind
             });
         }
-        
+
         if (err.code === 11000) {
             console.error("MongoDB Duplicate Key Error:", err.keyValue);
-            return res.status(400).send({ 
-                message: 'Duplicate key error', 
-                duplicateFields: err.keyValue 
+            return res.status(400).send({
+                message: 'Duplicate key error',
+                duplicateFields: err.keyValue
             });
         }
-        
-        return res.status(500).send({ 
-            message: 'Error updating lesson', 
+
+        return res.status(500).send({
+            message: 'Error updating lesson',
             error: err.message,
             errorName: err.name
         });
@@ -564,7 +564,7 @@ const getLesson = async (req, res) => {
 
     try {
         console.log('getLesson called for lesson:', lessonId);
-        
+
         // Primero obtener la lección sin populate para ver los datos raw
         const rawLesson = await Lesson.findById(lessonId);
         console.log('RAW lesson data:', {
@@ -573,10 +573,10 @@ const getLesson = async (req, res) => {
             suggested_facilitator: rawLesson.suggested_facilitator,
             author: rawLesson.author
         });
-        
+
         // Usar la nueva función que incluye populate de call.interested
         const lesson = await populateLessonWithCall(Lesson.findById(lessonId));
-            
+
         if (!lesson) {
             return handleError(res, 'Lesson not found', 404);
         }
@@ -591,7 +591,7 @@ const getLesson = async (req, res) => {
         console.log('getLesson - suggested_facilitator populated:', lesson.suggested_facilitator);
         console.log('getLesson - author populated:', lesson.author);
         console.log('getLesson - call.interested populated:', lesson.call?.interested?.length || 0);
-        
+
         return res.status(200).send({ lesson });
     } catch (err) {
         console.error('Error in getLesson:', err);
@@ -602,12 +602,12 @@ const getLessons = async (req, res) => {
     console.log('=== getLessons CALLED ===');
     console.log('req.params:', req.params);
     console.log('req.query:', req.query);
-    
+
     const { visibleOnes, page = 1 } = req.params;
     const accepted = visibleOnes === 'true';
-    
+
     console.log('visibleOnes:', visibleOnes, 'accepted:', accepted, 'page:', page);
-    
+
     // Para admin: si visibleOnes es 'true', mostrar solo accepted: true
     // Para admin: si visibleOnes es 'false', mostrar solo accepted: false  
     // Para admin: si visibleOnes es 'all', mostrar todas
@@ -622,28 +622,28 @@ const getLessons = async (req, res) => {
         console.log('Normal mode: Filtering by accepted =', accepted);
     }
     console.log('ITEMS_PER_PAGE value:', ITEMS_PER_PAGE);
-    
+
     // Verificar que ITEMS_PER_PAGE existe
     if (!ITEMS_PER_PAGE) {
         console.error('ITEMS_PER_PAGE is undefined!');
         return res.status(500).send({ message: 'ITEMS_PER_PAGE configuration error' });
     }
-    
+
     const limit = ITEMS_PER_PAGE;
     const skip = (parseInt(page) - 1) * limit;
-    
+
     console.log('Calculated - limit:', limit, 'skip:', skip);
 
     try {
         console.log('Testing simple query first...');
-        
+
         // Primero, probar query simple sin populate
         const simpleCount = await Lesson.countDocuments({});
         console.log('Total lessons in database:', simpleCount);
-        
+
         const simpleLessons = await Lesson.find({}).limit(1);
         console.log('Sample lesson found:', simpleLessons.length > 0 ? 'YES' : 'NO');
-        
+
         // Ahora la query real
         console.log('Starting main query with query:', query);
         const lessons = await Lesson.find(query)
@@ -657,7 +657,7 @@ const getLessons = async (req, res) => {
             .populate({ path: 'knowledge_area', model: 'KnowledgeArea', select: 'name' });
 
         console.log('Lessons found with basic populate:', lessons.length);
-        
+
         // Debug: verificar contenido de las lecciones
         if (lessons.length > 0) {
             const firstLesson = lessons[0];
@@ -670,7 +670,7 @@ const getLessons = async (req, res) => {
             console.log('- Level data:', firstLesson.level);
             console.log('- Level type:', typeof firstLesson.level);
         }
-        
+
         const total = await Lesson.countDocuments(query);
         console.log("Total lessons with query:", query, "=", total);
 
@@ -685,10 +685,10 @@ const getLessons = async (req, res) => {
         console.error("Error message:", err.message);
         console.error("Error stack:", err.stack);
         console.error("Error name:", err.name);
-        return res.status(500).send({ 
-            message: 'Error getting lessons', 
+        return res.status(500).send({
+            message: 'Error getting lessons',
             error: err.message,
-            details: err.stack 
+            details: err.stack
         });
     }
 };
@@ -699,7 +699,7 @@ const getLessons = async (req, res) => {
 const getAllLessons = async (req, res) => {
     console.log('=== getAllLessons CALLED ===');
     console.log('req.params:', req.params);
-    
+
     const { visibleOnes, order } = req.params;
     const accepted = visibleOnes === 'true';
     // Asegurar orden consistente: por defecto created_at descendente (más reciente primero)
@@ -707,9 +707,9 @@ const getAllLessons = async (req, res) => {
     const normalizedOrder = (order || '').trim();
     const isValidOrder = allowedOrders.has(normalizedOrder);
     const sortOrder = isValidOrder ? { [normalizedOrder]: -1, created_at: -1 } : { created_at: -1 };
-    
+
     console.log("getAllLessons - visibleOnes:", visibleOnes, "accepted:", accepted, "order:", order);
-    
+
     // Aplicar la misma lógica que en getLessons
     let query = {};
     if (visibleOnes === 'all') {
@@ -721,16 +721,16 @@ const getAllLessons = async (req, res) => {
     }
     console.log("sortOrder:", sortOrder);
     console.log("ITEMS_PER_PAGE:", ITEMS_PER_PAGE);
-    
+
     // Verificar configuración
     if (!ITEMS_PER_PAGE) {
         console.error('ITEMS_PER_PAGE is undefined in getAllLessons!');
         return res.status(500).send({ message: 'ITEMS_PER_PAGE configuration error' });
     }
-    
+
     try {
         console.log('Starting getAllLessons query...');
-        
+
         // Query con populate básico
         console.log('getAllLessons - Using query:', query);
         const lessons = await Lesson.find(query)
@@ -744,9 +744,9 @@ const getAllLessons = async (req, res) => {
                 path: 'call.interested',
                 select: 'name surname picture role _id'
             });
-        
+
         console.log('Lessons query completed, found:', lessons.length);
-        
+
         // Debug: verificar populate de call.interested y development_group
         const lessonsWithCalls = lessons.filter(lesson => lesson.call && lesson.call.interested);
         console.log('Lessons with calls:', lessonsWithCalls.length);
@@ -757,7 +757,7 @@ const getAllLessons = async (req, res) => {
                 interestedTypes: lessonsWithCalls[0].call.interested.map(i => typeof i)
             });
         }
-        
+
         // Debug: verificar populate de development_group
         const lessonsWithDevGroup = lessons.filter(lesson => lesson.development_group && lesson.development_group.length > 0);
         console.log('Lessons with development_group:', lessonsWithDevGroup.length);
@@ -769,25 +769,25 @@ const getAllLessons = async (req, res) => {
                 firstMember: lessonsWithDevGroup[0].development_group[0]?.name || 'No name'
             });
         }
-        
-        
+
+
         const total = await Lesson.countDocuments(query);
         console.log("getAllLessons - Total lessons found with query:", total);
-        
-        res.status(200).send({ 
-            lessons, 
-            total, 
-            pages: Math.ceil(total / ITEMS_PER_PAGE) 
+
+        res.status(200).send({
+            lessons,
+            total,
+            pages: Math.ceil(total / ITEMS_PER_PAGE)
         });
     } catch (err) {
         console.error("=== ERROR in getAllLessons ===");
         console.error("Error message:", err.message);
         console.error("Error stack:", err.stack);
         console.error("Error name:", err.name);
-        return res.status(500).send({ 
-            message: 'Error in getAllLessons', 
+        return res.status(500).send({
+            message: 'Error in getAllLessons',
             error: err.message,
-            details: err.stack 
+            details: err.stack
         });
     }
 };
@@ -798,16 +798,16 @@ const getMyLessons = async (req, res) => {
         // Determinar el ID correcto del usuario
         const userId = req.user._id || req.user.sub || req.user.id;
         console.log('getMyLessons called for user:', userId, 'page:', page);
-        
+
         if (!userId) {
             console.error('ERROR: No user ID found in req.user (getMyLessons)');
             return handleError(res, 'User ID not found', 400);
         }
-        
+
         // Usar la misma lógica que getAllMyLessons - excluir lecciones vacías del autor
         const query = {
             $or: [
-                { 
+                {
                     author: userId,
                     $or: [
                         { development_group: { $exists: true, $ne: [], $not: { $size: 0 } } }, // Tiene miembros
@@ -820,33 +820,33 @@ const getMyLessons = async (req, res) => {
                 { development_group: { $in: [userId] } } // ✅ Usar $in para arrays
             ]
         };
-        
-        const lessons = await Lesson.paginate(query, { 
-            page, 
+
+        const lessons = await Lesson.paginate(query, {
+            page,
             limit: ITEMS_PER_PAGE,
             populate: populateLesson()
         });
-        
+
         console.log('Raw paginated lessons found:', lessons.docs.length);
-        
+
         // Filtro adicional en JavaScript para las lecciones paginadas
         const filteredDocs = lessons.docs.filter(lesson => {
             if (lesson.author && lesson.author._id.toString() === userId.toString()) {
                 const hasMembers = lesson.development_group && lesson.development_group.length > 0;
                 const hasLeader = lesson.leader && lesson.leader !== null;
                 const hasExpert = lesson.expert && lesson.expert !== null;
-                
+
                 console.log(`Paginated Lesson "${lesson.title}" - HasMembers: ${hasMembers}, HasLeader: ${hasLeader}, HasExpert: ${hasExpert}`);
-                
+
                 return hasMembers || hasLeader || hasExpert;
             }
             return true;
         });
-        
+
         // Actualizar el objeto de respuesta con las lecciones filtradas
         lessons.docs = filteredDocs;
         lessons.totalDocs = filteredDocs.length;
-        
+
         console.log('Found paginated lessons for user (filtered):', filteredDocs.length);
         sendPaginatedResponse(res, lessons);
     } catch (err) {
@@ -859,17 +859,17 @@ const getAllMyLessons = async (req, res) => {
     try {
         console.log('=== getAllMyLessons DEBUG ===');
         console.log('Full req.user object:', JSON.stringify(req.user, null, 2));
-        
+
         // Determinar el ID correcto del usuario
         const userId = req.user._id || req.user.sub || req.user.id;
         console.log('Determined user ID:', userId);
         console.log('User name:', req.user.name);
-        
+
         if (!userId) {
             console.error('ERROR: No user ID found in req.user');
             return handleError(res, 'User ID not found', 400);
         }
-        
+
         // Buscar lecciones donde el usuario es:
         // 1. Autor (author) - SOLO si development_group no está vacío O tiene líder/experto
         // 2. Líder (leader) 
@@ -877,7 +877,7 @@ const getAllMyLessons = async (req, res) => {
         // 4. Miembro del grupo de desarrollo (development_group)
         const query = {
             $or: [
-                { 
+                {
                     author: userId,
                     $or: [
                         { development_group: { $exists: true, $ne: [], $not: { $size: 0 } } }, // Tiene miembros (no vacío)
@@ -890,22 +890,22 @@ const getAllMyLessons = async (req, res) => {
                 { development_group: { $in: [userId] } } // ✅ Usar $in para arrays
             ]
         };
-        
+
         console.log('MongoDB query:', JSON.stringify(query, null, 2));
-        
+
         // Test directo: buscar lecciones donde este usuario esté en development_group
-        const directTest = await Lesson.find({ 
-            development_group: { $in: [userId] } 
+        const directTest = await Lesson.find({
+            development_group: { $in: [userId] }
         }).select('title development_group');
         console.log('Direct test - lessons with user in development_group:', directTest.length);
         directTest.forEach(lesson => {
             console.log(`  - "${lesson.title}": development_group IDs = [${lesson.development_group.join(', ')}]`);
         });
-        
+
         const lessons = await Lesson.find(query).populate(populateLesson());
-        
+
         console.log('Raw lessons found:', lessons.length);
-        
+
         // Debug específico para cada lección encontrada
         lessons.forEach((lesson, index) => {
             console.log(`Lesson ${index}: "${lesson.title}"`);
@@ -919,7 +919,7 @@ const getAllMyLessons = async (req, res) => {
                 });
             }
         });
-        
+
         // Filtro adicional en JavaScript para asegurar que funcione
         const filteredLessons = lessons.filter(lesson => {
             // Si el usuario es el autor, verificar condiciones adicionales
@@ -927,17 +927,17 @@ const getAllMyLessons = async (req, res) => {
                 const hasMembers = lesson.development_group && lesson.development_group.length > 0;
                 const hasLeader = lesson.leader && lesson.leader !== null;
                 const hasExpert = lesson.expert && lesson.expert !== null;
-                
+
                 console.log(`Lesson "${lesson.title}" - Author: ${lesson.author.name}, HasMembers: ${hasMembers}, HasLeader: ${hasLeader}, HasExpert: ${hasExpert}`);
-                
+
                 // Solo incluir si tiene miembros, líder o experto
                 return hasMembers || hasLeader || hasExpert;
             }
-            
+
             // Si no es el autor, incluir la lección (es líder, experto o miembro)
             return true;
         });
-        
+
         console.log('Found lessons for user (filtered):', filteredLessons.length);
         res.status(200).send({ lessons: filteredLessons });
     } catch (err) {
@@ -955,21 +955,21 @@ const getLessonsToAdvise = async (req, res) => {
         console.log('req.user.sub:', req.user.sub);
         console.log('req.user.id:', req.user.id);
         console.log('Page:', page);
-        
+
         // Obtener el ID del usuario con fallbacks
         const userId = req.user._id || req.user.sub || req.user.id;
         console.log('Resolved userId:', userId);
-        
+
         if (!userId) {
             return res.status(401).send({ message: 'Usuario no autenticado correctamente' });
         }
-        
+
         // Buscar lecciones donde el usuario es:
         // 1. Facilitador sugerido (suggested_facilitator) en estado 'proposed' (Invitaciones)
         // 2. Facilitador asignado (expert) en estados posteriores
-        const query = { 
+        const query = {
             $or: [
-                { 
+                {
                     suggested_facilitator: userId,
                     state: 'proposed',
                     accepted: false
@@ -980,20 +980,20 @@ const getLessonsToAdvise = async (req, res) => {
                 }
             ]
         };
-        
+
         console.log('Query:', JSON.stringify(query, null, 2));
-        
-        const lessons = await Lesson.paginate(query, { 
-            page, 
+
+        const lessons = await Lesson.paginate(query, {
+            page,
             limit: ITEMS_PER_PAGE,
             populate: populateLesson()
         });
-        
+
         console.log('Found lessons to advise:', lessons.docs.length);
         lessons.docs.forEach(lesson => {
             console.log(`- ${lesson.title} (${lesson.state}) - suggested_facilitator: ${lesson.suggested_facilitator?._id || lesson.suggested_facilitator} - expert: ${lesson.expert?._id || lesson.expert}`);
         });
-        
+
         sendPaginatedResponse(res, lessons);
     } catch (err) {
         console.error('Error in getLessonsToAdvise:', err);
@@ -1008,21 +1008,21 @@ const getAllLessonsToAdvise = async (req, res) => {
         console.log('req.user._id:', req.user._id);
         console.log('req.user.sub:', req.user.sub);
         console.log('req.user.id:', req.user.id);
-        
+
         // Obtener el ID del usuario con fallbacks
         const userId = req.user._id || req.user.sub || req.user.id;
         console.log('Resolved userId:', userId);
-        
+
         if (!userId) {
             return res.status(401).send({ message: 'Usuario no autenticado correctamente' });
         }
-        
+
         // Buscar lecciones donde el usuario es:
         // 1. Facilitador sugerido (suggested_facilitator) en estado 'proposed' (Invitaciones)
         // 2. Facilitador asignado (expert) en estados posteriores
-        const query = { 
+        const query = {
             $or: [
-                { 
+                {
                     suggested_facilitator: userId,
                     state: 'proposed'
                 },
@@ -1032,16 +1032,16 @@ const getAllLessonsToAdvise = async (req, res) => {
                 }
             ]
         };
-        
+
         console.log('Query:', JSON.stringify(query, null, 2));
-        
+
         const lessons = await Lesson.find(query).populate(populateLesson());
-        
+
         console.log('Found all lessons to advise:', lessons.length);
         lessons.forEach(lesson => {
             console.log(`- ${lesson.title} (${lesson.state}) - suggested_facilitator: ${lesson.suggested_facilitator?._id || lesson.suggested_facilitator} - expert: ${lesson.expert?._id || lesson.expert}`);
         });
-        
+
         res.status(200).send({ lessons });
     } catch (err) {
         console.error('Error in getAllLessonsToAdvise:', err);
@@ -1067,21 +1067,23 @@ const getCalls = async (req, res) => {
 
         // Filtro base por estados (excluir las activas/en desarrollo)
         const stateFilter = { state: { $nin: ['assigned', 'development', 'test', 'completed'] } };
-       // console.log('stateFilter:', stateFilter);
+        // console.log('stateFilter:', stateFilter);
         //console.log('userId:', userId);
         // Visibilidad: todos los visibles para cualquiera; y además incluir no visibles si el solicitante es el líder
         const visibilityFilter = userId
-            ? { $or: [
+            ? {
+                $or: [
                     { "call.visible": true },
-                    { $and: [ { "call.visible": false }, { leader: userId } ] }
-                ] }
+                    { $and: [{ "call.visible": false }, { leader: userId }] }
+                ]
+            }
             : { "call.visible": true };
-        const query = { $and: [ stateFilter, visibilityFilter ] };
+        const query = { $and: [stateFilter, visibilityFilter] };
 
         const lessons = await Lesson.paginate(
             query,
-            { 
-                page, 
+            {
+                page,
                 limit: ITEMS_PER_PAGE,
                 populate: [
                     { path: 'author', select: 'name surname picture role _id' },
@@ -1104,10 +1106,10 @@ const getAllCalls = async (req, res) => {
         const userId = (req.user && (req.user._id || req.user.sub || req.user.id)) || null;
         const stateFilter = { state: { $nin: ['assigned', 'development', 'test', 'completed'] } };
         const visibilityFilter = userId
-            ? { $or: [ { "call.visible": true }, { $and: [ { "call.visible": false }, { leader: userId } ] } ] }
+            ? { $or: [{ "call.visible": true }, { $and: [{ "call.visible": false }, { leader: userId }] }] }
             : { "call.visible": true };
 
-        const query = { $and: [ stateFilter, visibilityFilter ] };
+        const query = { $and: [stateFilter, visibilityFilter] };
 
         const lessons = await Lesson.find(query)
             .populate('author', 'name surname picture role _id')
@@ -1125,7 +1127,7 @@ const getAllCalls = async (req, res) => {
 const getExperiences = async (req, res) => {
     const page = parseInt(req.query.page) || 1;
     try {
-        const lessons = await Lesson.paginate({  type: { $ne: null }, accepted: false }, { page, limit: ITEMS_PER_PAGE });
+        const lessons = await Lesson.paginate({ type: { $ne: null }, accepted: false }, { page, limit: ITEMS_PER_PAGE });
         sendPaginatedResponse(res, lessons);
     } catch (err) {
         handleError(res, 'Error fetching experiences');
@@ -1176,16 +1178,16 @@ async function populateLessonWithCall(lessonQuery) {
                 path: 'expert_comments.author',
                 select: 'name surname picture role _id'
             });
-        
+
         console.log('populateLessonWithCall - lesson ID:', lesson._id);
         console.log('populateLessonWithCall - expert:', lesson.expert);
         console.log('populateLessonWithCall - suggested_facilitator:', lesson.suggested_facilitator);
         console.log('populateLessonWithCall - author:', lesson.author);
         console.log('populateLessonWithCall - development_group populated:', lesson.development_group?.length || 0);
-        console.log('populateLessonWithCall - conversations authors populated:', Array.isArray(lesson.conversations) ? lesson.conversations.filter(m=>m.author && m.author.name).length : 0);
-        console.log('populateLessonWithCall - expert_comments authors populated:', Array.isArray(lesson.expert_comments) ? lesson.expert_comments.filter(m=>m.author && m.author.name).length : 0);
+        console.log('populateLessonWithCall - conversations authors populated:', Array.isArray(lesson.conversations) ? lesson.conversations.filter(m => m.author && m.author.name).length : 0);
+        console.log('populateLessonWithCall - expert_comments authors populated:', Array.isArray(lesson.expert_comments) ? lesson.expert_comments.filter(m => m.author && m.author.name).length : 0);
         console.log('populateLessonWithCall - populate config used:', populateLesson());
-        
+
         return lesson;
     } catch (error) {
         console.error('Error in populateLessonWithCall:', error);
@@ -1201,33 +1203,33 @@ const verifyToken = async (req, res) => {
         // Si llegamos aquí, el middleware auth.ensureAuth ya verificó el token
         // Solo necesitamos confirmar que el usuario existe
         const userId = req.user?.sub;
-        
+
         if (!userId) {
-            return res.status(401).send({ 
-                valid: false, 
-                message: 'Token no contiene información de usuario válida' 
+            return res.status(401).send({
+                valid: false,
+                message: 'Token no contiene información de usuario válida'
             });
         }
 
         // Verificar que el usuario aún existe en la base de datos
         const user = await User.findById(userId).select('_id name surname actived');
-        
+
         if (!user) {
-            return res.status(401).send({ 
-                valid: false, 
-                message: 'Usuario no encontrado' 
+            return res.status(401).send({
+                valid: false,
+                message: 'Usuario no encontrado'
             });
         }
 
         if (!user.actived) {
-            return res.status(401).send({ 
-                valid: false, 
-                message: 'Usuario desactivado' 
+            return res.status(401).send({
+                valid: false,
+                message: 'Usuario desactivado'
             });
         }
 
-        return res.status(200).send({ 
-            valid: true, 
+        return res.status(200).send({
+            valid: true,
             message: 'Token válido',
             user: {
                 _id: user._id,
@@ -1235,12 +1237,12 @@ const verifyToken = async (req, res) => {
                 surname: user.surname
             }
         });
-        
+
     } catch (err) {
         console.error('Error in verifyToken:', err);
-        return res.status(401).send({ 
-            valid: false, 
-            message: 'Error verificando token' 
+        return res.status(401).send({
+            valid: false,
+            message: 'Error verificando token'
         });
     }
 };
@@ -1249,21 +1251,21 @@ const verifyToken = async (req, res) => {
 
 const testEndpoint = async (req, res) => {
     console.log('=== TEST ENDPOINT CALLED ===');
-    
+
     try {
         console.log('Testing basic functionality...');
         console.log('ITEMS_PER_PAGE:', ITEMS_PER_PAGE);
         console.log('Lesson model available:', !!Lesson);
         console.log('User model available:', !!User);
-        
+
         // Test básico de configuración
         const config = require('../config.json');
         console.log('Config loaded:', config);
-        
+
         // Test de conexión a base de datos
         const testCount = await Lesson.countDocuments({});
         console.log('Database connection test - total lessons:', testCount);
-        
+
         return res.status(200).send({
             message: 'Test endpoint working',
             config: config,
@@ -1321,7 +1323,7 @@ const addLessonMessage = async (req, res) => {
 
         // Crear notificaciones
         if (participantIds.length > 0) {
-          
+
             await NotificationService.createLessonMessageNotification(
                 req.user,
                 participantIds,
@@ -1331,7 +1333,8 @@ const addLessonMessage = async (req, res) => {
             ).catch(err => console.error('Error creating lesson message notification:', err));
         }
 
-        return res.status(200).send({ lesson: updatedLesson });
+        const populated = await populateLessonWithCall(Lesson.findById(updatedLesson._id));
+        return res.status(200).send({ lesson: populated });
     } catch (err) {
         console.error('Error adding lesson message:', err);
         return handleError(res, 'Error adding message to lesson');
@@ -1452,10 +1455,9 @@ const addExpertComment = async (req, res) => {
             ).catch(err => console.error('Error creating expert comment notification:', err));
         }
 
-        // Poblar la lección actualizada para la respuesta
-        await updatedLesson.populate('author leader expert development_group');
-        
-        return res.status(200).send({ lesson: updatedLesson });
+        // Poblar la lección actualizada de forma exhaustiva para la respuesta
+        const populated = await populateLessonWithCall(Lesson.findById(updatedLesson._id));
+        return res.status(200).send({ lesson: populated });
     } catch (err) {
         console.error('Error adding expert comment:', err);
         return handleError(res, 'Error adding expert comment');
@@ -1475,7 +1477,7 @@ const changeLessonState = async (req, res) => {
 
         const oldState = lesson.state;
         lesson.state = state;
-        
+
         const updatedLesson = await lesson.save();
 
         // Obtener todos los participantes de la lección
@@ -1532,7 +1534,7 @@ const createCall = async (req, res) => {
         }
 
         // Estado permitido: cuando el facilitador avaló (accepted=true) o 
-        if (!(lesson.accepted === true )) {
+        if (!(lesson.accepted === true)) {
             return handleError(res, 'Call can only be opened after facilitator acceptance', 400);
         }
 
@@ -1624,10 +1626,10 @@ const getUserPublicLessons = async (req, res) => {
         }
 
         // Verificar configuración de privacidad del usuario
-        const privacySettings = targetUser.lessonsPrivacySettings || { 
-            showLessonsInProfile: true, 
-            hiddenLessonIds: [], 
-            allowCollaborationRequests: true 
+        const privacySettings = targetUser.lessonsPrivacySettings || {
+            showLessonsInProfile: true,
+            hiddenLessonIds: [],
+            allowCollaborationRequests: true
         };
 
         if (!privacySettings.showLessonsInProfile) {
@@ -1685,7 +1687,7 @@ const getUserPublicLessons = async (req, res) => {
         // Transformar resultados para incluir rol del usuario
         const transformedLessons = result.docs.map(lesson => {
             const lessonObj = lesson.toObject();
-            
+
             // Determinar el rol del usuario en esta lección
             let userRole = 'author';
             if (lesson.author && lesson.author._id.toString() === userId) {
@@ -1805,7 +1807,7 @@ const getUserLessonsStats = async (req, res) => {
             const month = moment().subtract(i, 'months');
             const monthStart = month.startOf('month').unix();
             const monthEnd = month.endOf('month').unix();
-            
+
             const monthCount = recentLessons.filter(lesson => {
                 const lessonDate = moment(lesson.updated_at, 'X').unix();
                 return lessonDate >= monthStart && lessonDate <= monthEnd;
@@ -1893,9 +1895,9 @@ const toggleLessonVisibility = async (req, res) => {
 
         // Verificar que el usuario tiene permisos sobre la lección
         const hasPermission = lesson.author.toString() === userId ||
-                            lesson.leader?.toString() === userId ||
-                            lesson.expert?.toString() === userId ||
-                            lesson.development_group?.some(member => member.toString() === userId);
+            lesson.leader?.toString() === userId ||
+            lesson.expert?.toString() === userId ||
+            lesson.development_group?.some(member => member.toString() === userId);
 
         if (!hasPermission) {
             return handleError(res, 'You do not have permission to modify this lesson visibility', 403);
@@ -1988,14 +1990,14 @@ const respondToFacilitatorInvitation = async (req, res) => {
         }
 
         const facilitator = await User.findById(facilitatorId);
-        
+
         if (response === 'accept') {
             // Aceptar la invitación: mover a expert y auto-aprobar
             lesson.expert = facilitatorId;
             lesson.accepted = true;
             lesson.state = 'assigned'; // Cambiar estado a asignado
             lesson.suggested_facilitator = null; // Limpiar el campo de sugerencia
-            
+
             await lesson.save();
 
             // Obtener administradores para notificaciones
@@ -2084,10 +2086,10 @@ const getFacilitatorInvitations = async (req, res) => {
             suggested_facilitator: facilitatorId,
             expert: { $exists: false } // Solo invitaciones pendientes
         })
-        .populate('author', 'name surname email')
-        .populate('knowledge_area', 'name')
-        .select('title resume justification level knowledge_area created_at')
-        .sort({ created_at: -1 });
+            .populate('author', 'name surname email')
+            .populate('knowledge_area', 'name')
+            .select('title resume justification level knowledge_area created_at')
+            .sort({ created_at: -1 });
 
         return res.status(200).send({
             invitations: invitations,
@@ -2159,7 +2161,7 @@ const approveFacilitatorSuggestion = async (req, res) => {
         // 4. Notificar a administradores (opcional, para seguimiento)
         const admins = await User.find({ role: { $in: ['admin', 'delegated_admin'] } });
         const adminIds = admins.map(admin => admin._id);
-        
+
         if (adminIds.length > 0) {
             const adminNotifications = adminIds.map(adminId => ({
                 user: adminId,
@@ -2181,7 +2183,7 @@ const approveFacilitatorSuggestion = async (req, res) => {
         console.log('- state:', lesson.state);
         console.log('- Líder notificado para gestionar convocatoria');
 
-        res.status(200).send({ 
+        res.status(200).send({
             message: 'Lesson accepted by facilitator',
             lesson: lesson,
             acceptedFlow: true
@@ -2232,7 +2234,7 @@ const rejectFacilitatorSuggestion = async (req, res) => {
         // CASO 1: Lección ya aceptada (accepted=true) - Solo retirarse y notificar al admin
         if (lesson.accepted === true) {
             console.log('Lección ya aceptada - Facilitador se retira y se notifica al admin');
-            
+
             // Remover al facilitador de la lección
             lesson.expert = null;
             lesson.suggested_facilitator = null;
@@ -2287,7 +2289,7 @@ const rejectFacilitatorSuggestion = async (req, res) => {
             }
 
             console.log('Facilitator withdrawn from accepted lesson:', lessonId);
-            return res.status(200).send({ 
+            return res.status(200).send({
                 message: 'Te has retirado de la lección. Un administrador asignará un nuevo facilitador.',
                 lesson: lesson,
                 withdrawn: true
@@ -2296,7 +2298,7 @@ const rejectFacilitatorSuggestion = async (req, res) => {
 
         // CASO 2: Lección NO aceptada aún - Rechazo completo
         console.log('Lección no aceptada - Rechazo completo');
-        
+
         lesson.suggested_facilitator = null;
         lesson.expert = null;
         lesson.state = 'rejected_by_facilitator';
@@ -2318,7 +2320,7 @@ const rejectFacilitatorSuggestion = async (req, res) => {
         }
 
         console.log('Facilitator rejected lesson successfully:', lessonId);
-        res.status(200).send({ 
+        res.status(200).send({
             message: 'Lesson rejected successfully',
             lesson: lesson,
             withdrawn: false
